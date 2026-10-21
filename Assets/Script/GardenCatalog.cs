@@ -13,6 +13,10 @@ namespace GardenXR
         [Tooltip("Mots-clés séparés par des virgules, cherchés dans le nom du prefab pour le classement automatique. Vide = groupe 'fourre-tout'.")]
         public string keywords = "";
 
+        [Tooltip("Besoin en lumière des éléments de ce groupe. None = pas des plantes (pas d'alerte).")]
+        public SunNeed sunNeed = SunNeed.MiOmbre;
+        public WaterNeed waterNeed = WaterNeed.Moyen;
+
         public List<GameObject> prefabs = new List<GameObject>();
 
         public bool HasKeywords => !string.IsNullOrWhiteSpace(keywords);
@@ -30,6 +34,10 @@ namespace GardenXR
         }
     }
 
+    /// <summary>
+    /// Catalogue de tous les éléments plaçables, rangés par groupes.
+    /// Clic droit > Create > GardenXR > Garden Catalog
+    /// </summary>
     [CreateAssetMenu(menuName = "GardenXR/Garden Catalog", fileName = "GardenCatalog")]
     public class GardenCatalog : ScriptableObject
     {
@@ -41,10 +49,14 @@ namespace GardenXR
 
         public static List<CatalogGroup> DefaultGroups() => new List<CatalogGroup>
         {
-            new CatalogGroup { name = "Plantes", keywords = "plant, plante, bush, buisson, shrub, arbuste, grass, herbe, fern, fougere, leaf, feuille, cactus, succulent, ivy, lierre, hedge, haie" },
-            new CatalogGroup { name = "Arbres",  keywords = "tree, arbre, palm, palmier, pine, sapin, oak, chene, birch, bouleau" },
-            new CatalogGroup { name = "Fleurs",  keywords = "flower, fleur, rose, tulip, tulipe, daisy, marguerite, lily, lys, sunflower, tournesol, lavender, lavande, bloom, blossom" },
-            new CatalogGroup { name = "Autre",   keywords = "" },
+            new CatalogGroup { name = "Plantes", sunNeed = SunNeed.MiOmbre,     waterNeed = WaterNeed.Moyen,
+                               keywords = "plant, plante, bush, buisson, shrub, arbuste, grass, herbe, fern, fougere, leaf, feuille, cactus, succulent, ivy, lierre, hedge, haie" },
+            new CatalogGroup { name = "Arbres",  sunNeed = SunNeed.PleinSoleil, waterNeed = WaterNeed.Moyen,
+                               keywords = "tree, arbre, palm, palmier, pine, sapin, oak, chene, birch, bouleau" },
+            new CatalogGroup { name = "Fleurs",  sunNeed = SunNeed.PleinSoleil, waterNeed = WaterNeed.Eleve,
+                               keywords = "flower, fleur, rose, tulip, tulipe, daisy, marguerite, lily, lys, sunflower, tournesol, lavender, lavande, bloom, blossom" },
+            new CatalogGroup { name = "Autre",   sunNeed = SunNeed.None,        waterNeed = WaterNeed.None,
+                               keywords = "" },
         };
     }
 }

@@ -170,6 +170,8 @@ namespace GardenXR
             SetLayerRecursive(ghost, LayerMask.NameToLayer("Ignore Raycast"));
 
             _ghostRenderers = ghost.GetComponentsInChildren<Renderer>();
+            foreach (var r in _ghostRenderers)
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; // le fantôme ne projette pas d'ombre
             _lastValid = null;
             SetGhostMaterial(true);
             return ghost;

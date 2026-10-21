@@ -173,6 +173,9 @@ namespace GardenXR
                     var data = ScriptableObject.CreateInstance<GardenItemData>();
                     data.displayName = prefab.name;
                     data.prefab = prefab;
+                    data.groupName = source.name;
+                    data.sunNeed = source.sunNeed;
+                    data.waterNeed = source.waterNeed;
                     group.items.Add(data);
                 }
                 if (group.items.Count > 0) _groups.Add(group); // pas d'onglet vide

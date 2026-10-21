@@ -15,6 +15,9 @@ namespace GardenXR
         /// <summary>Objet actuellement tenu en main (null sinon).</summary>
         public static PlacedItem Held { get; private set; }
 
+        /// <summary>Tous les objets posés et actifs (utilisé par l'analyse d'ensoleillement).</summary>
+        public static readonly System.Collections.Generic.List<PlacedItem> All = new System.Collections.Generic.List<PlacedItem>();
+
         public GardenItemData Data { get; private set; }
         public XRGrabInteractable Grab { get; private set; }
 
@@ -59,14 +62,35 @@ namespace GardenXR
             Grab.hoverExited.AddListener(OnHoverExit);
 
             _renderers = GetComponentsInChildren<Renderer>();
+            foreach (var r in _renderers)
+            {
+                // Toutes les plantes projettent et reçoivent des ombres (simulation solaire)
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                r.receiveShadows = true;
+            }
             _mpb = new MaterialPropertyBlock();
             _baseScale = transform.localScale;
         }
 
-        void OnEnable() => _deleting = false;
+        void OnEnable()
+        {
+            _deleting = false;
+            if (!All.Contains(this)) All.Add(this);
+        }
+
+        /// <summary>Boîte englobante de l'objet (tous ses renderers).</summary>
+        public Bounds GetBounds()
+        {
+            if (_renderers == null || _renderers.Length == 0) return new Bounds(transform.position, Vector3.one * 0.3f);
+            Bounds b = _renderers[0].bounds;
+            foreach (var r in _renderers) if (r) b.Encapsulate(r.bounds);
+            return b;
+        }
 
         void OnDisable()
         {
+            All.Remove(this);
+            if (PlantInsights.Instance) PlantInsights.Instance.SetHovered(this, false);
             // Supprimé ou désactivé : on retire proprement le highlight
             _hoverCount = 0;
             SetHighlight(false);
@@ -86,12 +110,17 @@ namespace GardenXR
         {
             _hoverCount++;
             SetHighlight(true);
+            if (PlantInsights.Instance) PlantInsights.Instance.SetHovered(this, true);
         }
 
         void OnHoverExit(HoverExitEventArgs _)
         {
             _hoverCount = Mathf.Max(0, _hoverCount - 1);
-            if (_hoverCount == 0) SetHighlight(false);
+            if (_hoverCount == 0)
+            {
+                SetHighlight(false);
+                if (PlantInsights.Instance) PlantInsights.Instance.SetHovered(this, false);
+            }
         }
 
         void SetHighlight(bool on)
@@ -133,12 +162,15 @@ namespace GardenXR
 
             if (!SnapToGround())
             {
-                // Lâché hors du sol (dans le vide ou en dehors du terrain) : retour à la position d'origine
-                transform.SetPositionAndRotation(_grabStartPos, _grabStartRot);
+                // Lâché hors du terrain : on le pose au point valide le plus proche du lâcher,
+                // en remontant vers sa position d'avant (qui est toujours valide en dernier recours).
+                PlaceNearestValid(transform.position, _grabStartPos);
                 GardenSounds.Play(GardenSound.Error, transform.position);
-                return;
             }
-            GardenSounds.Play(GardenSound.Release, transform.position);
+            else
+            {
+                GardenSounds.Play(GardenSound.Release, transform.position);
+            }
 
             if (GardenEditHistory.Instance)
                 GardenEditHistory.Instance.RecordMove(transform, _grabStartPos, _grabStartRot);
@@ -148,9 +180,12 @@ namespace GardenXR
         /// Remet l'objet droit (rotation Y seulement), sur la grille et posé sur le sol.
         /// Renvoie false s'il n'y a pas de sol sous l'objet (hors du terrain) : rien n'est modifié.
         /// </summary>
-        public bool SnapToGround()
+        public bool SnapToGround() => TrySnapAt(transform.position);
+
+        /// <summary>Essaie de poser l'objet au sol à la verticale de 'position'. False si pas de sol.</summary>
+        bool TrySnapAt(Vector3 position)
         {
-            Vector3 p = transform.position;
+            Vector3 p = position;
             if (_gridSize > 0f)
             {
                 p.x = Mathf.Round(p.x / _gridSize) * _gridSize;
@@ -165,6 +200,41 @@ namespace GardenXR
             transform.SetPositionAndRotation(p, Quaternion.Euler(0f, transform.eulerAngles.y, 0f));
             return true;
         }
+
+        /// <summary>
+        /// Parcourt le segment [lâcher → position d'avant] et pose l'objet sur le premier point
+        /// qui a du sol, avec une petite marge pour ne pas rester collé au bord.
+        /// </summary>
+        void PlaceNearestValid(Vector3 dropPos, Vector3 previousPos)
+        {
+            const int steps = 40;
+            const float edgeMargin = 0.15f; // mètres vers l'intérieur du terrain
+
+            Vector3 start = new Vector3(dropPos.x, previousPos.y, dropPos.z);
+            Vector3 dir = previousPos - start;
+            float length = dir.magnitude;
+
+            if (length > 0.001f)
+            {
+                dir /= length;
+                for (int i = 0; i <= steps; i++)
+                {
+                    float d = length * i / steps;
+                    Vector3 candidate = start + dir * d;
+                    if (!HasGround(candidate)) continue;
+
+                    // Marge vers l'intérieur, sans dépasser la position d'avant
+                    Vector3 inside = start + dir * Mathf.Min(length, d + edgeMargin);
+                    if (TrySnapAt(HasGround(inside) ? inside : candidate)) return;
+                }
+            }
+
+            // Dernier recours : position d'avant la saisie
+            transform.SetPositionAndRotation(previousPos, _grabStartRot);
+        }
+
+        bool HasGround(Vector3 p) =>
+            Physics.Raycast(new Vector3(p.x, p.y + 50f, p.z), Vector3.down, 200f, _groundMask, QueryTriggerInteraction.Ignore);
 
         /// <summary>Beaucoup de prefabs décoratifs n'ont pas de collider : on en crée un à la taille du modèle.</summary>
         void EnsureCollider()
