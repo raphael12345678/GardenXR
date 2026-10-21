@@ -54,6 +54,7 @@ namespace GardenXR
             Held = this;
             _grabStartPos = transform.position;
             _grabStartRot = transform.rotation;
+            GardenSounds.Play(GardenSound.Grab, transform.position);
         }
 
         void OnRelease(SelectExitEventArgs _)
@@ -61,17 +62,25 @@ namespace GardenXR
             if (Held == this) Held = null;
             if (_deleting) return; // supprimé pendant qu'il était tenu
 
-            SnapToGround();
+            if (!SnapToGround())
+            {
+                // Lâché hors du sol (dans le vide ou en dehors du terrain) : retour à la position d'origine
+                transform.SetPositionAndRotation(_grabStartPos, _grabStartRot);
+                GardenSounds.Play(GardenSound.Error, transform.position);
+                return;
+            }
+            GardenSounds.Play(GardenSound.Release, transform.position);
 
             if (GardenEditHistory.Instance)
                 GardenEditHistory.Instance.RecordMove(transform, _grabStartPos, _grabStartRot);
         }
 
-        /// <summary>Remet l'objet droit (rotation Y seulement), sur la grille et posé sur le sol.</summary>
-        public void SnapToGround()
+        /// <summary>
+        /// Remet l'objet droit (rotation Y seulement), sur la grille et posé sur le sol.
+        /// Renvoie false s'il n'y a pas de sol sous l'objet (hors du terrain) : rien n'est modifié.
+        /// </summary>
+        public bool SnapToGround()
         {
-            transform.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f);
-
             Vector3 p = transform.position;
             if (_gridSize > 0f)
             {
@@ -79,13 +88,13 @@ namespace GardenXR
                 p.z = Mathf.Round(p.z / _gridSize) * _gridSize;
             }
 
-            if (Physics.Raycast(new Vector3(p.x, p.y + 50f, p.z), Vector3.down, out RaycastHit hit,
-                                200f, _groundMask, QueryTriggerInteraction.Ignore))
-            {
-                p.y = hit.point.y + (Data ? Data.yOffset : 0f);
-            }
+            if (!Physics.Raycast(new Vector3(p.x, p.y + 50f, p.z), Vector3.down, out RaycastHit hit,
+                                 200f, _groundMask, QueryTriggerInteraction.Ignore))
+                return false;
 
-            transform.position = p;
+            p.y = hit.point.y + (Data ? Data.yOffset : 0f);
+            transform.SetPositionAndRotation(p, Quaternion.Euler(0f, transform.eulerAngles.y, 0f));
+            return true;
         }
 
         /// <summary>Beaucoup de prefabs décoratifs n'ont pas de collider : on en crée un à la taille du modèle.</summary>

@@ -128,18 +128,23 @@ namespace GardenXR
             if (grab && grab.isSelected && grab.interactionManager)
                 grab.interactionManager.CancelInteractableSelection((IXRSelectInteractable)grab);
 
+            Vector3 pos = item.transform.position;
             item.gameObject.SetActive(false); // masqué, pas détruit : on peut annuler
             Push(new DeleteStep { go = item.gameObject });
-            Play(deleteClip);
+            Play(deleteClip, GardenSound.Delete, pos);
         }
 
         public void Undo()
         {
-            if (_steps.Count == 0) return;
+            if (_steps.Count == 0)
+            {
+                GardenSounds.PlayAtHead(GardenSound.Error); // rien à annuler
+                return;
+            }
             var last = _steps[_steps.Count - 1];
             _steps.RemoveAt(_steps.Count - 1);
             last.Undo();
-            Play(undoClip);
+            Play(undoClip, GardenSound.Undo, Camera.main ? Camera.main.transform.position : transform.position);
         }
 
         // ---------- Interne ----------
@@ -154,9 +159,10 @@ namespace GardenXR
             }
         }
 
-        void Play(AudioClip clip)
+        void Play(AudioClip clip, GardenSound fallback, Vector3 position)
         {
             if (audioSource && clip) audioSource.PlayOneShot(clip);
+            else GardenSounds.Play(fallback, position);
         }
 
         void Log(string msg)

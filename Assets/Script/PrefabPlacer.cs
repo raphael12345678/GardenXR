@@ -129,14 +129,16 @@ namespace GardenXR
 
         void TryPlace()
         {
+            Vector3 soundPos = _ghost ? _ghost.transform.position : transform.position;
+
             if (!_validPose)
             {
-                Play(errorClip);
+                Play(errorClip, GardenSound.Error, soundPos);
                 return;
             }
 
-            var placed = SpawnItem(_current, _ghost.transform.position, _ghost.transform.rotation);
-            Play(placeClip);
+            SpawnItem(_current, _ghost.transform.position, _ghost.transform.rotation);
+            Play(placeClip, GardenSound.Place, soundPos);
             if (haptics) haptics.SendHapticImpulse(0.4f, 0.08f);
 
             if (!keepPlacing) CancelPlacement();
@@ -196,9 +198,11 @@ namespace GardenXR
             foreach (Transform t in go.transform) SetLayerRecursive(t.gameObject, layer);
         }
 
-        void Play(AudioClip clip)
+        /// <summary>Clip de l'inspecteur s'il est renseigné, sinon son généré, joué en 3D.</summary>
+        void Play(AudioClip clip, GardenSound fallback, Vector3 position)
         {
             if (audioSource && clip) audioSource.PlayOneShot(clip);
+            else GardenSounds.Play(fallback, position);
         }
     }
 }

@@ -102,6 +102,7 @@ namespace GardenXR
             Debug.Log($"[Catalog] {total} éléments dans {_groups.Count} groupes.");
 
             SetOpen(false);
+            _ready = true;
         }
 
         void Start()
@@ -127,6 +128,7 @@ namespace GardenXR
         void OnToggle(InputAction.CallbackContext _) => SetOpen(!IsOpen);
 
         bool _listBuilt;
+        bool _ready; // pas de son pour la fermeture initiale au lancement
 
         public void SetOpen(bool open)
         {
@@ -136,6 +138,8 @@ namespace GardenXR
                 ShowGroup(showAllTab || _groups.Count == 0 ? AllTab : 0);
             }
             if (open) PlaceInFrontOfHead();
+            if (_ready && _canvas.enabled != open)
+                GardenSounds.Play(open ? GardenSound.MenuOpen : GardenSound.MenuClose, transform.position);
             _canvas.enabled = open;
             var raycaster = GetComponent<TrackedDeviceGraphicRaycaster>();
             if (raycaster) raycaster.enabled = open;
@@ -203,7 +207,11 @@ namespace GardenXR
             var text = tab.GetComponentInChildren<TMP_Text>();
             if (text) text.text = label;
 
-            tab.onClick.AddListener(() => ShowGroup(groupIndex));
+            tab.onClick.AddListener(() =>
+            {
+                GardenSounds.Play(GardenSound.Click, transform.position);
+                ShowGroup(groupIndex);
+            });
             _tabs.Add((tab.GetComponent<Image>(), groupIndex));
         }
 
@@ -273,6 +281,7 @@ namespace GardenXR
 
         void OnItemClicked(GardenItemData item)
         {
+            GardenSounds.Play(GardenSound.Click, transform.position);
             if (placer != null) placer.BeginPlacement(item);
             else Debug.LogWarning("[Catalog] Aucun PrefabPlacer assigné.");
 
