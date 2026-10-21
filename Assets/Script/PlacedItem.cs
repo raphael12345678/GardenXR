@@ -160,17 +160,23 @@ namespace GardenXR
             if (Held == this) Held = null;
             if (_deleting) return; // supprimé pendant qu'il était tenu
 
-            if (!SnapToGround())
+            bool snapped = SnapToGround();
+            if (!snapped)
             {
                 // Lâché hors du terrain : on le pose au point valide le plus proche du lâcher,
                 // en remontant vers sa position d'avant (qui est toujours valide en dernier recours).
                 PlaceNearestValid(transform.position, _grabStartPos);
-                GardenSounds.Play(GardenSound.Error, transform.position);
             }
-            else
+
+            // Zone de plantation qui n'autorise pas ce groupe : retour à la position d'avant
+            if (Data != null && !PlantingZone.IsAllowed(Data, transform.position))
             {
-                GardenSounds.Play(GardenSound.Release, transform.position);
+                transform.SetPositionAndRotation(_grabStartPos, _grabStartRot);
+                GardenSounds.Play(GardenSound.Error, transform.position);
+                return;
             }
+
+            GardenSounds.Play(snapped ? GardenSound.Release : GardenSound.Error, transform.position);
 
             if (GardenEditHistory.Instance)
                 GardenEditHistory.Instance.RecordMove(transform, _grabStartPos, _grabStartRot);
@@ -236,24 +242,53 @@ namespace GardenXR
         bool HasGround(Vector3 p) =>
             Physics.Raycast(new Vector3(p.x, p.y + 50f, p.z), Vector3.down, 200f, _groundMask, QueryTriggerInteraction.Ignore);
 
-        /// <summary>Beaucoup de prefabs décoratifs n'ont pas de collider : on en crée un à la taille du modèle.</summary>
+        /// <summary>Au-delà de cette hauteur (m), l'objet est traité comme un arbre : collider fin sur le tronc.</summary>
+        public static float TallThreshold = 1.6f;
+
+        /// <summary>
+        /// - Objet bas sans collider : boîte à la taille du modèle.
+        /// - Objet haut (arbre) : collider fin le long du tronc, pour ne pas bloquer le rayon,
+        ///   la pose ou la téléportation sous la couronne. L'ombre de la couronne reste prise en compte
+        ///   par l'analyse d'ensoleillement (qui utilise le volume visuel, pas le collider).
+        /// </summary>
         void EnsureCollider()
         {
-            if (GetComponentInChildren<Collider>() != null) return;
-
             var renderers = GetComponentsInChildren<Renderer>();
             if (renderers.Length == 0) return;
 
-            // Calcul des bornes sans rotation pour une boîte bien ajustée
+            // Calcul des bornes sans rotation pour une forme bien ajustée
             Quaternion rot = transform.rotation;
             transform.rotation = Quaternion.identity;
 
             Bounds b = renderers[0].bounds;
             foreach (var r in renderers) b.Encapsulate(r.bounds);
 
+            Vector3 s = transform.lossyScale;
+            float sx = Mathf.Max(Mathf.Abs(s.x), 0.0001f);
+            float sy = Mathf.Max(Mathf.Abs(s.y), 0.0001f);
+
+            if (b.size.y > TallThreshold)
+            {
+                // Les colliders d'origine (souvent toute la couronne) sont désactivés
+                foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
+
+                // Tronc : à la verticale du pivot (base de l'arbre), sur toute la hauteur
+                float radius = Mathf.Clamp(Mathf.Min(b.extents.x, b.extents.z) * 0.3f, 0.24f, 0.7f);
+                var capsule = gameObject.AddComponent<CapsuleCollider>();
+                capsule.direction = 1; // axe Y
+                Vector3 localCenter = transform.InverseTransformPoint(new Vector3(transform.position.x, b.center.y, transform.position.z));
+                capsule.center = localCenter;
+                capsule.height = b.size.y / sy;
+                capsule.radius = radius / sx;
+
+                transform.rotation = rot;
+                return;
+            }
+
+            if (GetComponentInChildren<Collider>() != null) { transform.rotation = rot; return; }
+
             var box = gameObject.AddComponent<BoxCollider>();
             box.center = transform.InverseTransformPoint(b.center);
-            Vector3 s = transform.lossyScale;
             box.size = new Vector3(
                 b.size.x / Mathf.Max(Mathf.Abs(s.x), 0.0001f),
                 b.size.y / Mathf.Max(Mathf.Abs(s.y), 0.0001f),

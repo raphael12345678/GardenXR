@@ -17,6 +17,8 @@ MonoBehaviour:
   - name: Plantes
     keywords: plant, plante, bush, buisson, shrub, arbuste, grass, herbe, fern, fougere,
       leaf, feuille, cactus, succulent, ivy, lierre, hedge, haie
+    sunNeed: 1
+    waterNeed: 2
     prefabs:
     - {fileID: 6846470340721416821, guid: 355f8608ec978844cab41afd1cad1457, type: 3}
     - {fileID: 7896568630718372716, guid: 93c24c3897ee80f47847c675d94dc13d, type: 3}
@@ -50,13 +52,23 @@ MonoBehaviour:
     - {fileID: 5197688770069902155, guid: d902b0e0e9dcf5b469e618e9a8f855cf, type: 3}
   - name: Arbres
     keywords: tree, arbre, palm, palmier, pine, sapin, oak, chene, birch, bouleau
-    prefabs: []
+    sunNeed: 1
+    waterNeed: 2
+    prefabs:
+    - {fileID: 192044, guid: 19682540d8a014522a319b1cf788aee2, type: 3}
+    - {fileID: 191266, guid: c44bd9bdc114d4a60932c0087d9d1732, type: 3}
+    - {fileID: 188006, guid: c6b7fb383a3534b039692b5485b6e739, type: 3}
+    - {fileID: 137650, guid: 826b6a0b570e8460990010fa615b5a2a, type: 3}
   - name: Fleurs
     keywords: flower, fleur, rose, tulip, tulipe, daisy, marguerite, lily, lys, sunflower,
       tournesol, lavender, lavande, bloom, blossom
+    sunNeed: 1
+    waterNeed: 3
     prefabs: []
   - name: Autre
     keywords: 
+    sunNeed: 0
+    waterNeed: 0
     prefabs:
     - {fileID: 4024648664431578789, guid: 5eea9de7fc700a249baa2e4a35af1846, type: 3}
     - {fileID: 8547882546665512567, guid: 4bc7fa6b051e58f44816d288d6074ff5, type: 3}

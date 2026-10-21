@@ -123,7 +123,8 @@ namespace GardenXR
             pos.y += _current.yOffset;
 
             _ghost.transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, _yaw, 0f));
-            _validPose = Vector3.Angle(rh.normal, Vector3.up) < 35f; // pente trop forte = invalide
+            _validPose = Vector3.Angle(rh.normal, Vector3.up) < 35f   // pente trop forte = invalide
+                         && PlantingZone.IsAllowed(_current, pos);   // groupe non autorisé dans cette zone
             SetGhostMaterial(_validPose);
         }
 

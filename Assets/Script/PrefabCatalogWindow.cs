@@ -47,6 +47,8 @@ namespace GardenXR
         [SerializeField] int thumbnailSize = 256;
         [Tooltip("Afficher le nom sous la vignette.")]
         [SerializeField] bool showLabels = false;
+        [Tooltip("Nombre de lignes de vignettes visibles en même temps (la fenêtre s'agrandit en hauteur). 0 = ne pas toucher.")]
+        [SerializeField] int visibleRows = 3;
 
         [Header("Ouverture")]
         [Tooltip("Bouton Menu de la main gauche : <XRController>{LeftHand}/menuButton")]
@@ -94,6 +96,7 @@ namespace GardenXR
 
             CollectGroups();
             BuildTabs();
+            FitHeightToRows();
             // La liste (et les vignettes) est construite à la première ouverture,
             // quand le pipeline de rendu est prêt.
 
@@ -186,7 +189,9 @@ namespace GardenXR
 
         void BuildTabs()
         {
-            if (tabContainer == null || tabButtonTemplate == null) return;
+            // Pas de barre d'onglets configurée à la main : on la crée automatiquement
+            if (tabContainer == null) tabContainer = CreateTabBar();
+            if (tabContainer == null) return;
 
             if (showAllTab)
             {
@@ -201,14 +206,111 @@ namespace GardenXR
 
         string TabLabel(string name, int count) => showCountInTab ? $"{name} ({count})" : name;
 
+        /// <summary>
+        /// Agrandit la fenêtre en hauteur pour que la zone de défilement affiche 'visibleRows' lignes
+        /// de vignettes (en plus de la barre d'onglets).
+        /// </summary>
+        void FitHeightToRows()
+        {
+            if (visibleRows <= 0 || _scroll == null || contentRoot == null) return;
+            var grid = contentRoot.GetComponent<GridLayoutGroup>();
+            if (grid == null) return;
+
+            float needed = grid.padding.top + grid.padding.bottom
+                           + visibleRows * grid.cellSize.y + (visibleRows - 1) * grid.spacing.y;
+            var viewport = _scroll.viewport ? _scroll.viewport : (RectTransform)_scroll.transform;
+            float delta = needed - viewport.rect.height;
+            if (Mathf.Abs(delta) < 1f) return;
+
+            // On agrandit la zone de défilement (si elle a une hauteur fixe), le Canvas
+            // et chaque parent qui n'est pas étiré verticalement
+            var srt = (RectTransform)_scroll.transform;
+            if (Mathf.Approximately(srt.anchorMin.y, srt.anchorMax.y)) srt.sizeDelta += new Vector2(0f, delta);
+
+            for (var t = (RectTransform)_scroll.transform.parent; t != null; t = t.parent as RectTransform)
+            {
+                bool stretched = !Mathf.Approximately(t.anchorMin.y, t.anchorMax.y);
+                if (!stretched || t == transform) t.sizeDelta += new Vector2(0f, delta);
+                if (t == transform) break;
+            }
+        }
+
+        /// <summary>
+        /// Crée une barre d'onglets en haut du panneau et décale la zone de défilement en dessous.
+        /// </summary>
+        Transform CreateTabBar()
+        {
+            const float barHeight = 64f, margin = 12f;
+            var parent = _scroll ? _scroll.transform.parent : transform;
+
+            var bar = new GameObject("Tabs", typeof(RectTransform));
+            bar.layer = parent.gameObject.layer;
+            var rt = (RectTransform)bar.transform;
+            rt.SetParent(parent, false);
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.offsetMin = new Vector2(margin, -(barHeight + margin));
+            rt.offsetMax = new Vector2(-margin, -margin);
+
+            var layout = bar.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 10f;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandWidth = layout.childForceExpandHeight = true;
+
+            // La liste commence sous les onglets
+            if (_scroll)
+            {
+                var srt = (RectTransform)_scroll.transform;
+                srt.offsetMax = new Vector2(srt.offsetMax.x, srt.offsetMax.y - (barHeight + margin));
+            }
+            return bar.transform;
+        }
+
+        /// <summary>Onglet créé par code quand aucun modèle n'est fourni dans l'inspecteur.</summary>
+        Button CreateTabButton(string label)
+        {
+            var go = new GameObject("Tab_" + label, typeof(RectTransform));
+            go.layer = tabContainer.gameObject.layer;
+            go.transform.SetParent(tabContainer, false);
+
+            var img = go.AddComponent<Image>();
+            img.color = tabNormalColor;
+            var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+
+            var txtGo = new GameObject("Label", typeof(RectTransform));
+            txtGo.layer = go.layer;
+            var trt = (RectTransform)txtGo.transform;
+            trt.SetParent(go.transform, false);
+            trt.anchorMin = Vector2.zero;
+            trt.anchorMax = Vector2.one;
+            trt.offsetMin = trt.offsetMax = Vector2.zero;
+            var t = txtGo.AddComponent<TextMeshProUGUI>();
+            t.text = label;
+            t.fontSize = 26;
+            t.fontStyle = FontStyles.Bold;
+            t.alignment = TextAlignmentOptions.Center;
+            t.color = new Color(0.1f, 0.15f, 0.1f);
+            t.raycastTarget = false;
+            return btn;
+        }
+
         void CreateTab(string label, int groupIndex)
         {
-            var tab = Instantiate(tabButtonTemplate, tabContainer);
-            tab.gameObject.SetActive(true);
-            tab.name = "Tab_" + label;
-
-            var text = tab.GetComponentInChildren<TMP_Text>();
-            if (text) text.text = label;
+            Button tab;
+            if (tabButtonTemplate != null)
+            {
+                tab = Instantiate(tabButtonTemplate, tabContainer);
+                tab.gameObject.SetActive(true);
+                tab.name = "Tab_" + label;
+                var text = tab.GetComponentInChildren<TMP_Text>();
+                if (text) text.text = label;
+            }
+            else
+            {
+                tab = CreateTabButton(label);
+            }
 
             tab.onClick.AddListener(() =>
             {

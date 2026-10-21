@@ -21,8 +21,15 @@ namespace GardenXR
 
         [Header("Analyse")]
         [SerializeField] float refreshInterval = 0.5f;
-        [SerializeField] float dayStartHour = 7f;
-        [SerializeField] float dayEndHour = 19f;
+        [Tooltip("Plage de recherche du lever/coucher du soleil (le vrai lever/coucher dépend de la saison).")]
+        [SerializeField] float dayStartHour = 4f;
+        [SerializeField] float dayEndHour = 22f;
+        [Tooltip("Pas de simulation de la course du soleil, en heures.")]
+        [SerializeField] float timeStep = 0.5f;
+        [Tooltip("En dessous de cette hauteur (degrés), le soleil est trop rasant pour compter.")]
+        [SerializeField] float minSunElevation = 5f;
+        [Tooltip("Réduction horizontale du volume des autres objets (couronne arrondie plutôt que boîte).")]
+        [Range(0.5f, 1f)] [SerializeField] float occluderShrink = 0.85f;
         [Tooltip("Plein soleil : part minimale d'heures ensoleillées.")]
         [Range(0f, 1f)] [SerializeField] float fullSunMinRatio = 0.6f;
         [Tooltip("Mi-ombre : part minimale d'heures ensoleillées.")]
@@ -32,20 +39,26 @@ namespace GardenXR
 
         [Header("Affichage")]
         [SerializeField] float infoPanelWidth = 0.4f;
+        [Tooltip("Grands objets : distance minimale entre toi et le panneau d'info (m).")]
+        [SerializeField] float minPanelDistance = 1.3f;
         [SerializeField] float alertSize = 0.18f;
         [SerializeField] bool alertSound = true;
 
         public class Result
         {
-            public int sunHours, totalHours;
-            public string issue; // null = besoins satisfaits
-            public float Ratio => totalHours > 0 ? (float)sunHours / totalHours : 0f;
+            public float sunHours;    // heures de soleil reçues (pondérées par la part de la plante éclairée)
+            public float dayHours;    // durée du jour utile (soleil au-dessus de minSunElevation)
+            public float ratio;       // part de l'énergie solaire reçue (heures pondérées par la hauteur du soleil)
+            public float sunrise = -1f, sunset = -1f;
+            public string issue;      // null = besoins satisfaits
+            public float Ratio => ratio;
         }
 
         readonly Dictionary<PlacedItem, Result> _results = new Dictionary<PlacedItem, Result>();
         readonly Dictionary<PlacedItem, GameObject> _alerts = new Dictionary<PlacedItem, GameObject>();
-        readonly RaycastHit[] _hits = new RaycastHit[32];
         readonly List<PlacedItem> _tmp = new List<PlacedItem>();
+        readonly List<Bounds> _occluders = new List<Bounds>();
+        readonly List<Vector3> _samples = new List<Vector3>();
 
         PlacedItem _hovered;
         float _timer;
@@ -128,44 +141,111 @@ namespace GardenXR
             }
         }
 
+        /// <summary>
+        /// Simule la course du soleil sur la journée (pas de 30 min, du lever au coucher réels de la saison).
+        /// À chaque pas, plusieurs points du feuillage de la plante (selon sa taille) sont testés contre
+        /// le volume des autres objets : on obtient une part éclairée (ombre partielle possible).
+        /// Chaque pas est pondéré par la hauteur du soleil : un soleil rasant compte moins qu'un soleil de midi.
+        /// </summary>
         public Result Analyze(PlacedItem item)
         {
             var r = new Result();
             Bounds b = item.GetBounds();
-            Vector3 origin = b.center + Vector3.up * (b.extents.y * 0.3f);
+            BuildSamples(b);
+            CollectOccluders(item, b);
 
-            for (float h = dayStartHour; h <= dayEndHour + 0.01f; h += 1f)
+            float minSin = Mathf.Sin(minSunElevation * Mathf.Deg2Rad);
+            float litWeighted = 0f, totalWeighted = 0f;
+
+            for (float h = dayStartHour; h <= dayEndHour + 0.001f; h += timeStep)
             {
                 Vector3 dir = sun.DirectionToSun(h);
-                if (dir.y < 0.05f) continue; // soleil couché ou rasant
-                r.totalHours++;
-                if (!IsShaded(item, origin, dir)) r.sunHours++;
+                if (dir.y < minSin) continue; // soleil couché ou trop rasant
+
+                if (r.sunrise < 0f) r.sunrise = h;
+                r.sunset = h;
+                r.dayHours += timeStep;
+
+                int lit = 0;
+                foreach (var p in _samples)
+                    if (!IsShaded(p, dir)) lit++;
+                float fraction = (float)lit / _samples.Count;
+
+                float weight = dir.y; // sinus de la hauteur du soleil ≈ énergie reçue
+                litWeighted += fraction * weight;
+                totalWeighted += weight;
+                r.sunHours += fraction * timeStep;
             }
 
-            float ratio = r.Ratio;
+            r.ratio = totalWeighted > 0f ? litWeighted / totalWeighted : 0f;
+
             switch (item.Data.sunNeed)
             {
-                case SunNeed.PleinSoleil: if (ratio < fullSunMinRatio) r.issue = "Manque de soleil"; break;
-                case SunNeed.MiOmbre:     if (ratio < partShadeMinRatio) r.issue = "Manque de soleil"; break;
-                case SunNeed.Ombre:       if (ratio > shadeMaxRatio) r.issue = "Trop de soleil"; break;
+                case SunNeed.PleinSoleil: if (r.ratio < fullSunMinRatio) r.issue = "Manque de soleil"; break;
+                case SunNeed.MiOmbre:     if (r.ratio < partShadeMinRatio) r.issue = "Manque de soleil"; break;
+                case SunNeed.Ombre:       if (r.ratio > shadeMaxRatio) r.issue = "Trop de soleil"; break;
             }
             return r;
         }
 
-        /// <summary>Vrai si un autre objet posé se trouve entre la plante et le soleil.</summary>
-        bool IsShaded(PlacedItem item, Vector3 origin, Vector3 dirToSun)
+        /// <summary>
+        /// Points testés : centre et 4 points du haut du feuillage, écartés selon la taille de la plante.
+        /// Une petite plante a des points rapprochés, une grande des points étalés.
+        /// </summary>
+        void BuildSamples(Bounds b)
         {
-            // Rayon lancé DEPUIS le soleil VERS la plante : un rayon ne détecte pas un collider
-            // dans lequel il démarre. Partir de loin évite de rater une grande plante très proche
-            // (ou une plante tenue en l'air à l'intérieur de la boîte d'une autre).
-            const float dist = 60f;
-            Vector3 from = origin + dirToSun * dist;
-            int n = Physics.RaycastNonAlloc(from, -dirToSun, _hits, dist - 0.01f, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < n; i++)
+            _samples.Clear();
+            float y = b.min.y + b.size.y * 0.75f;
+            float ex = b.extents.x * 0.6f, ez = b.extents.z * 0.6f;
+            Vector3 c = new Vector3(b.center.x, y, b.center.z);
+            _samples.Add(c);
+            _samples.Add(c + new Vector3(ex, 0f, 0f));
+            _samples.Add(c - new Vector3(ex, 0f, 0f));
+            _samples.Add(c + new Vector3(0f, 0f, ez));
+            _samples.Add(c - new Vector3(0f, 0f, ez));
+        }
+
+        /// <summary>
+        /// Garde seulement les objets qui peuvent réellement faire de l'ombre à cette plante :
+        /// plus hauts que sa base, et assez proches pour que leur ombre la touche
+        /// (longueur d'ombre maximale ≈ hauteur / tan(hauteur minimale du soleil)).
+        /// </summary>
+        void CollectOccluders(PlacedItem item, Bounds b)
+        {
+            _occluders.Clear();
+            float maxShadowFactor = 1f / Mathf.Tan(Mathf.Max(minSunElevation, 1f) * Mathf.Deg2Rad);
+
+            foreach (var other in PlacedItem.All)
             {
-                var other = _hits[i].collider.GetComponentInParent<PlacedItem>();
-                if (other != null && other != item) return true;
+                if (other == null || other == item || !other.isActiveAndEnabled) continue;
+                Bounds ob = other.GetBounds();
+
+                float heightAbove = ob.max.y - b.min.y;
+                if (heightAbove <= 0.05f) continue; // plus bas que la plante : pas d'ombre
+
+                Vector2 d = new Vector2(ob.center.x - b.center.x, ob.center.z - b.center.z);
+                float reach = heightAbove * maxShadowFactor
+                              + Mathf.Max(ob.extents.x, ob.extents.z) + Mathf.Max(b.extents.x, b.extents.z);
+                if (d.magnitude > reach) continue;
+
+                // Couronne plutôt arrondie : on réduit un peu la boîte horizontalement
+                ob.extents = new Vector3(ob.extents.x * occluderShrink, ob.extents.y, ob.extents.z * occluderShrink);
+                _occluders.Add(ob);
             }
+        }
+
+        /// <summary>
+        /// Vrai si un objet se trouve entre ce point et le soleil.
+        /// Le rayon part de loin côté soleil vers le point : il détecte aussi une plante collée
+        /// ou glissée dans le feuillage d'une autre. On teste le volume visuel (couronne comprise),
+        /// pas les colliders (les arbres n'ont qu'un collider fin sur le tronc).
+        /// </summary>
+        bool IsShaded(Vector3 point, Vector3 dirToSun)
+        {
+            const float dist = 80f;
+            var ray = new Ray(point + dirToSun * dist, -dirToSun);
+            foreach (var ob in _occluders)
+                if (ob.IntersectRay(ray, out float d) && d < dist - 0.01f) return true;
             return false;
         }
 
@@ -258,7 +338,7 @@ namespace GardenXR
             var data = _hovered.Data;
             Bounds b = _hovered.GetBounds();
             var t = _panel.transform;
-            t.position = new Vector3(b.center.x, b.max.y + 0.3f, b.center.z);
+            t.position = InfoPanelPosition(b);
             t.rotation = Quaternion.LookRotation(t.position - _head.position);
 
             string text = $"<b>{data.displayName}</b>\n<size=75%><color=#B8D8B0>{data.groupName}</color></size>\n";
@@ -273,7 +353,9 @@ namespace GardenXR
                 text += $"Lumière : {SunLabel(data.sunNeed)}\n";
                 if (r != null)
                 {
-                    text += $"Soleil reçu : {r.sunHours} h / {r.totalHours} h ({Mathf.RoundToInt(r.Ratio * 100f)} %)\n";
+                    text += $"Soleil reçu : {r.sunHours:0.#} h / {r.dayHours:0.#} h ({Mathf.RoundToInt(r.Ratio * 100f)} %)\n";
+                    if (r.sunrise >= 0f)
+                        text += $"<size=75%><color=#B8D8B0>Soleil utile {FormatHour(r.sunrise)} – {FormatHour(r.sunset)}</color></size>\n";
                 }
                 text += $"Eau : {WaterLabel(data.waterNeed)}\n";
                 text += r != null && r.issue != null
@@ -283,6 +365,37 @@ namespace GardenXR
 
             _panelText.text = text;
             _panel.enabled = true;
+        }
+
+        /// <summary>
+        /// Au-dessus de l'objet, comme d'habitude. Si l'objet est plus haut que les yeux (arbre),
+        /// le panneau descend à hauteur du regard et se place devant l'objet, côté utilisateur.
+        /// </summary>
+        Vector3 InfoPanelPosition(Bounds b)
+        {
+            Vector3 above = new Vector3(b.center.x, b.max.y + 0.3f, b.center.z);
+            float eyeLevel = _head.position.y - 0.1f;
+            if (above.y <= _head.position.y + 0.2f) return above;
+
+            Vector3 toHead = _head.position - b.center;
+            toHead.y = 0f;
+            float distToHead = toHead.magnitude;
+            if (distToHead < 0.001f) return new Vector3(b.center.x, eyeLevel, b.center.z);
+            toHead /= distToHead;
+
+            // Collé au tronc, côté utilisateur, mais toujours à au moins 'minPanelDistance' de lui
+            float offset = Mathf.Min(0.5f, Mathf.Max(0f, distToHead - minPanelDistance));
+            Vector3 p = b.center + toHead * offset;
+            p.y = eyeLevel;
+            return p;
+        }
+
+        static string FormatHour(float h)
+        {
+            int hh = Mathf.FloorToInt(h);
+            int mm = Mathf.RoundToInt((h - hh) * 60f);
+            if (mm == 60) { hh++; mm = 0; }
+            return $"{hh:00}:{mm:00}";
         }
 
         static string SunLabel(SunNeed n) => n switch
