@@ -18,11 +18,23 @@ namespace GardenXR
         public GardenItemData Data { get; private set; }
         public XRGrabInteractable Grab { get; private set; }
 
+        // ---------- Highlight au survol (ALC « highlight d'objet manipulable ») ----------
+        public static float HoverScale = 1.06f;                                // léger scale-up
+        public static Color HoverTint = new Color(1.35f, 1.45f, 1.2f, 1f);     // éclaircissement vert doux
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");   // URP Lit
+        static readonly int ColorId = Shader.PropertyToID("_Color");           // shaders Built-in
+
         LayerMask _groundMask;
         float _gridSize;
         Vector3 _grabStartPos;
         Quaternion _grabStartRot;
         bool _deleting;
+
+        Renderer[] _renderers;
+        MaterialPropertyBlock _mpb;
+        Vector3 _baseScale;
+        int _hoverCount;      // plusieurs mains peuvent survoler en même temps
+        bool _highlighted;
 
         public void Init(GardenItemData data, LayerMask groundMask, float gridSize)
         {
@@ -43,9 +55,66 @@ namespace GardenXR
             Grab.useDynamicAttach = true; // l'objet ne "saute" pas dans la main
             Grab.selectEntered.AddListener(OnGrab);
             Grab.selectExited.AddListener(OnRelease);
+            Grab.hoverEntered.AddListener(OnHoverEnter);
+            Grab.hoverExited.AddListener(OnHoverExit);
+
+            _renderers = GetComponentsInChildren<Renderer>();
+            _mpb = new MaterialPropertyBlock();
+            _baseScale = transform.localScale;
         }
 
         void OnEnable() => _deleting = false;
+
+        void OnDisable()
+        {
+            // Supprimé ou désactivé : on retire proprement le highlight
+            _hoverCount = 0;
+            SetHighlight(false);
+            if (_mpb != null) transform.localScale = _baseScale;
+        }
+
+        void Update()
+        {
+            if (_mpb == null) return;
+            // Scale-up uniquement au survol, pas pendant la saisie (évite de modifier la taille finale)
+            bool grow = _highlighted && !(Grab && Grab.isSelected);
+            Vector3 target = grow ? _baseScale * HoverScale : _baseScale;
+            transform.localScale = Vector3.Lerp(transform.localScale, target, Time.deltaTime * 18f);
+        }
+
+        void OnHoverEnter(HoverEnterEventArgs _)
+        {
+            _hoverCount++;
+            SetHighlight(true);
+        }
+
+        void OnHoverExit(HoverExitEventArgs _)
+        {
+            _hoverCount = Mathf.Max(0, _hoverCount - 1);
+            if (_hoverCount == 0) SetHighlight(false);
+        }
+
+        void SetHighlight(bool on)
+        {
+            if (_highlighted == on || _renderers == null) return;
+            _highlighted = on;
+
+            foreach (var r in _renderers)
+            {
+                if (!r) continue;
+                if (on)
+                {
+                    r.GetPropertyBlock(_mpb);
+                    _mpb.SetColor(BaseColorId, HoverTint);
+                    _mpb.SetColor(ColorId, HoverTint);
+                    r.SetPropertyBlock(_mpb);
+                }
+                else
+                {
+                    r.SetPropertyBlock(null); // retour aux couleurs du matériau
+                }
+            }
+        }
 
         public void MarkDeleting() => _deleting = true;
 
