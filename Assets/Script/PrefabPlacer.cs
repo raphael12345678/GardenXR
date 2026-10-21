@@ -147,6 +147,12 @@ namespace GardenXR
         {
             var go = Instantiate(itemData.prefab, position, rotation, placedItemsRoot);
             go.name = itemData.displayName;
+
+            // Rend l'objet saisissable / déplaçable / supprimable
+            var placed = go.AddComponent<PlacedItem>();
+            placed.Init(itemData, groundMask, snapToGrid ? gridSize : 0f);
+
+            if (GardenEditHistory.Instance) GardenEditHistory.Instance.RecordPlace(go);
             return go;
         }
 

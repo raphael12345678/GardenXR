@@ -183,7 +183,7 @@ MonoBehaviour:
   maxDistance: 30
   groundMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 64
   haptics: {fileID: 111070190}
   confirmAction:
     m_UseReference: 0
@@ -519,6 +519,59 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+--- !u!1 &361114437
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 361114439}
+  - component: {fileID: 361114438}
+  m_Layer: 0
+  m_Name: EditHistory
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &361114438
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 361114437}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 17976c2325e01ab48ab67b8940ecd72a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  undoHand: 0
+  undoButton: secondaryButton
+  deleteHand: 1
+  deleteButton: secondaryButton
+  maxSteps: 30
+  debugLogs: 1
+  audioSource: {fileID: 0}
+  undoClip: {fileID: 0}
+  deleteClip: {fileID: 0}
+--- !u!4 &361114439
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 361114437}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &441087506
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -901,7 +954,7 @@ GameObject:
   - component: {fileID: 1249617919}
   - component: {fileID: 1249617918}
   - component: {fileID: 1249617922}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: Plane
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1583,6 +1636,10 @@ MonoBehaviour:
   itemButtonTemplate: {fileID: 1453398434}
   tabContainer: {fileID: 0}
   tabButtonTemplate: {fileID: 0}
+  showAllTab: 0
+  showCountInTab: 1
+  tabNormalColor: {r: 1, g: 1, b: 1, a: 1}
+  tabSelectedColor: {r: 0.55, g: 0.82, b: 0.5, a: 1}
   autoThumbnails: 1
   thumbnailSize: 256
   showLabels: 0
@@ -1875,3 +1932,4 @@ SceneRoots:
   - {fileID: 178663203}
   - {fileID: 1790673475}
   - {fileID: 2021972945}
+  - {fileID: 361114439}

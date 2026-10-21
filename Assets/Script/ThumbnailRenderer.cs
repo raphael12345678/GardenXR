@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace GardenXR
 {
@@ -47,7 +49,7 @@ namespace GardenXR
             _cam.transform.LookAt(b.center);
             _cam.nearClipPlane = Mathf.Max(0.01f, dist - radius * 1.5f);
             _cam.farClipPlane = dist + radius * 1.5f;
-            _cam.Render();
+            RenderCamera();
 
             var previous = RenderTexture.active;
             RenderTexture.active = _rt;
@@ -62,6 +64,19 @@ namespace GardenXR
 
             tex.name = "Thumb_" + prefab.name;
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>
+        /// En URP (Unity 6), Camera.Render() peut rendre avec des shaders de secours (rose/violet).
+        /// La requête de rendu URP passe par le vrai pipeline.
+        /// </summary>
+        static void RenderCamera()
+        {
+            var request = new UniversalRenderPipeline.SingleCameraRequest { destination = _rt };
+            if (RenderPipeline.SupportsRenderRequest(_cam, request))
+                RenderPipeline.SubmitRenderRequest(_cam, request);
+            else
+                _cam.Render();
         }
 
         public static void Release()

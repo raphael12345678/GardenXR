@@ -8,15 +8,16 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 namespace GardenXR
 {
     /// <summary>
-    /// Fenêtre canvas world-space qui s'ouvre devant l'utilisateur et liste tous les prefabs
-    /// du catalogue. Un clic sur un bouton lance le placement via PrefabPlacer.
+    /// Fenêtre canvas world-space qui s'ouvre devant l'utilisateur, avec un onglet par groupe
+    /// du catalogue (Plantes, Arbres, Fleurs, Autre...). Un clic sur un élément lance le placement.
     ///
     /// Hiérarchie attendue :
-    ///   CatalogWindow (Canvas World Space + ce script)
+    ///   Canvas (World Space + ce script)
     ///     └ Panel
-    ///         ├ Tabs (HorizontalLayoutGroup)          -> tabContainer (optionnel)
-    ///         └ Scroll View (ScrollRect)
-    ///             └ Viewport / Content (GridLayoutGroup) -> contentRoot
+    ///         ├ Tabs (Horizontal Layout Group)       -> tabContainer
+    ///         │   └ TabButton (Button + TMP_Text)    -> tabButtonTemplate
+    ///         └ Scroll View / Viewport / Content     -> contentRoot
+    ///               └ Button (Icon + Label)          -> itemButtonTemplate
     /// </summary>
     [RequireComponent(typeof(Canvas))]
     public class PrefabCatalogWindow : MonoBehaviour
@@ -27,10 +28,18 @@ namespace GardenXR
 
         [Header("UI")]
         [SerializeField] Transform contentRoot;
-        [Tooltip("Bouton modèle : Button + Image (enfant 'Icon') + TMP_Text (enfant 'Label'). Désactivé dans la scène.")]
+        [Tooltip("Bouton modèle : Button + Image (enfant 'Icon') + TMP_Text (enfant 'Label').")]
         [SerializeField] Button itemButtonTemplate;
+
+        [Header("Onglets (groupes)")]
         [SerializeField] Transform tabContainer;
         [SerializeField] Button tabButtonTemplate;
+        [Tooltip("Ajoute un onglet 'Tout' en premier.")]
+        [SerializeField] bool showAllTab = false;
+        [Tooltip("Afficher le nombre d'éléments dans le nom de l'onglet.")]
+        [SerializeField] bool showCountInTab = true;
+        [SerializeField] Color tabNormalColor = new Color(1f, 1f, 1f, 1f);
+        [SerializeField] Color tabSelectedColor = new Color(0.55f, 0.82f, 0.5f, 1f);
 
         [Header("Vignettes")]
         [Tooltip("Génère une image 3D de chaque prefab quand il n'a pas d'icône.")]
@@ -40,7 +49,7 @@ namespace GardenXR
         [SerializeField] bool showLabels = false;
 
         [Header("Ouverture")]
-        [Tooltip("Ex. : bouton Menu de la main gauche (<XRController>{LeftHand}/menuButton).")]
+        [Tooltip("Bouton Menu de la main gauche : <XRController>{LeftHand}/menuButton")]
         [SerializeField] InputActionProperty toggleAction;
         [SerializeField] Transform head; // Main Camera du XR Origin
         [SerializeField] float distance = 0.8f;
@@ -49,16 +58,29 @@ namespace GardenXR
         [Tooltip("Test : ouvrir la fenêtre dès le lancement.")]
         [SerializeField] bool openOnStart = false;
 
-        readonly List<GardenItemData> _items = new List<GardenItemData>();
+        class Group
+        {
+            public string name;
+            public readonly List<GardenItemData> items = new List<GardenItemData>();
+        }
+
+        const int AllTab = -1;
+
+        readonly List<Group> _groups = new List<Group>();
         readonly List<GameObject> _spawnedButtons = new List<GameObject>();
+        readonly List<(Image image, int groupIndex)> _tabs = new List<(Image, int)>();
         readonly Dictionary<GameObject, Sprite> _thumbnails = new Dictionary<GameObject, Sprite>();
         Canvas _canvas;
-        GardenCategory? _filter;
+        ScrollRect _scroll;
+        int _currentGroup;
+
+        public bool IsOpen => _canvas.enabled;
 
         void Awake()
         {
             _canvas = GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.WorldSpace;
+            if (head == null && Camera.main != null) head = Camera.main.transform;
             if (_canvas.worldCamera == null && head != null)
                 _canvas.worldCamera = head.GetComponent<Camera>();
 
@@ -66,15 +88,19 @@ namespace GardenXR
             if (GetComponent<TrackedDeviceGraphicRaycaster>() == null)
                 gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
 
-            if (head == null && Camera.main != null) head = Camera.main.transform;
-
+            _scroll = contentRoot ? contentRoot.GetComponentInParent<ScrollRect>() : null;
             itemButtonTemplate.gameObject.SetActive(false);
             if (tabButtonTemplate) tabButtonTemplate.gameObject.SetActive(false);
 
-            CollectItems();
+            CollectGroups();
             BuildTabs();
-            BuildList();
-            Debug.Log($"[Catalog] {_items.Count} éléments chargés, {_spawnedButtons.Count} boutons créés.");
+            // La liste (et les vignettes) est construite à la première ouverture,
+            // quand le pipeline de rendu est prêt.
+
+            int total = 0;
+            foreach (var g in _groups) total += g.items.Count;
+            Debug.Log($"[Catalog] {total} éléments dans {_groups.Count} groupes.");
+
             SetOpen(false);
         }
 
@@ -96,19 +122,21 @@ namespace GardenXR
             toggleAction.action.performed -= OnToggle;
         }
 
-        void OnToggle(InputAction.CallbackContext _)
-        {
-            Debug.Log("[Catalog] Bouton Menu reçu");
-            SetOpen(!IsOpen);
-        }
+        void OnDestroy() => ThumbnailRenderer.Release();
 
-        public bool IsOpen => _canvas.enabled;
+        void OnToggle(InputAction.CallbackContext _) => SetOpen(!IsOpen);
+
+        bool _listBuilt;
 
         public void SetOpen(bool open)
         {
+            if (open && !_listBuilt)
+            {
+                _listBuilt = true;
+                ShowGroup(showAllTab || _groups.Count == 0 ? AllTab : 0);
+            }
             if (open) PlaceInFrontOfHead();
             _canvas.enabled = open;
-            // Le raycaster suit le canvas pour ne pas bloquer les rayons quand c'est fermé
             var raycaster = GetComponent<TrackedDeviceGraphicRaycaster>();
             if (raycaster) raycaster.enabled = open;
         }
@@ -118,60 +146,95 @@ namespace GardenXR
         {
             if (head == null) return;
             Vector3 forward = Vector3.ProjectOnPlane(head.forward, Vector3.up);
-            if (forward.sqrMagnitude < 0.001f) forward = head.up; // regard vertical
+            if (forward.sqrMagnitude < 0.001f) forward = head.up;
             forward.Normalize();
 
             transform.position = head.position + forward * distance + Vector3.up * heightOffset;
             transform.rotation = Quaternion.LookRotation(forward, Vector3.up);
         }
 
-        void CollectItems()
+        // ---------- Données ----------
+
+        void CollectGroups()
         {
-            _items.Clear();
+            _groups.Clear();
             if (catalog == null) { Debug.LogWarning("[Catalog] Aucun GardenCatalog assigné."); return; }
 
-            foreach (var data in catalog.items)
-                if (data != null && data.prefab != null) _items.Add(data);
-
-            // Prefabs bruts sans fiche : on crée une fiche à la volée
-            foreach (var prefab in catalog.prefabs)
+            foreach (var source in catalog.groups)
             {
-                if (prefab == null || _items.Exists(i => i.prefab == prefab)) continue;
-                var data = ScriptableObject.CreateInstance<GardenItemData>();
-                data.displayName = prefab.name;
-                data.prefab = prefab;
-                _items.Add(data);
+                var group = new Group { name = source.name };
+                foreach (var prefab in source.prefabs)
+                {
+                    if (prefab == null) continue;
+                    var data = ScriptableObject.CreateInstance<GardenItemData>();
+                    data.displayName = prefab.name;
+                    data.prefab = prefab;
+                    group.items.Add(data);
+                }
+                if (group.items.Count > 0) _groups.Add(group); // pas d'onglet vide
             }
         }
+
+        // ---------- Onglets ----------
 
         void BuildTabs()
         {
             if (tabContainer == null || tabButtonTemplate == null) return;
 
-            CreateTab("Tout", null);
-            foreach (GardenCategory cat in System.Enum.GetValues(typeof(GardenCategory)))
-                if (_items.Exists(i => i.category == cat))
-                    CreateTab(cat.ToString(), cat);
+            if (showAllTab)
+            {
+                int total = 0;
+                foreach (var g in _groups) total += g.items.Count;
+                CreateTab(TabLabel("Tout", total), AllTab);
+            }
+
+            for (int i = 0; i < _groups.Count; i++)
+                CreateTab(TabLabel(_groups[i].name, _groups[i].items.Count), i);
         }
 
-        void CreateTab(string label, GardenCategory? category)
+        string TabLabel(string name, int count) => showCountInTab ? $"{name} ({count})" : name;
+
+        void CreateTab(string label, int groupIndex)
         {
             var tab = Instantiate(tabButtonTemplate, tabContainer);
             tab.gameObject.SetActive(true);
+            tab.name = "Tab_" + label;
+
             var text = tab.GetComponentInChildren<TMP_Text>();
             if (text) text.text = label;
-            tab.onClick.AddListener(() => { _filter = category; BuildList(); });
+
+            tab.onClick.AddListener(() => ShowGroup(groupIndex));
+            _tabs.Add((tab.GetComponent<Image>(), groupIndex));
         }
+
+        void ShowGroup(int groupIndex)
+        {
+            _currentGroup = groupIndex;
+
+            foreach (var (image, index) in _tabs)
+                if (image) image.color = index == _currentGroup ? tabSelectedColor : tabNormalColor;
+
+            BuildList();
+            if (_scroll) _scroll.verticalNormalizedPosition = 1f; // revenir en haut
+        }
+
+        // ---------- Liste ----------
 
         void BuildList()
         {
             foreach (var b in _spawnedButtons) Destroy(b);
             _spawnedButtons.Clear();
 
-            foreach (var item in _items)
-            {
-                if (_filter.HasValue && item.category != _filter.Value) continue;
+            if (_currentGroup == AllTab)
+                foreach (var g in _groups) AddButtons(g.items);
+            else if (_currentGroup >= 0 && _currentGroup < _groups.Count)
+                AddButtons(_groups[_currentGroup].items);
+        }
 
+        void AddButtons(List<GardenItemData> items)
+        {
+            foreach (var item in items)
+            {
                 var button = Instantiate(itemButtonTemplate, contentRoot);
                 button.gameObject.SetActive(true);
                 button.name = "Btn_" + item.displayName;
@@ -207,8 +270,6 @@ namespace GardenXR
             _thumbnails[prefab] = sprite;
             return sprite;
         }
-
-        void OnDestroy() => ThumbnailRenderer.Release();
 
         void OnItemClicked(GardenItemData item)
         {
