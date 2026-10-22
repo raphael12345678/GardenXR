@@ -299,7 +299,7 @@ namespace GardenXR
 
         void BuildInfoPanel()
         {
-            const float w = 460f, h = 240f;
+            const float w = 480f, h = 310f;
             var root = new GameObject("PlantInfoPanel", typeof(RectTransform));
             root.transform.SetParent(transform, false);
             root.transform.localScale = Vector3.one * (infoPanelWidth / w);
@@ -357,7 +357,17 @@ namespace GardenXR
                     if (r.sunrise >= 0f)
                         text += $"<size=75%><color=#B8D8B0>Soleil utile {FormatHour(r.sunrise)} – {FormatHour(r.sunset)}</color></size>\n";
                 }
-                text += $"Eau : {WaterLabel(data.waterNeed)}\n";
+                // Eau : type × taille de la plante, et part reçue selon la distance au tuyau et ses racines
+                float need = WaterModel.NeedPerDay(_hovered);
+                text += $"Eau : {WaterLabel(data.waterNeed)} · besoin {need:0.#} L/jour\n";
+                if (IrrigationPipe.All.Count > 0)
+                {
+                    float supply = WaterModel.Supply(_hovered, out int zone);
+                    float roots = WaterModel.RootRadius(b);
+                    text += zone >= 0
+                        ? $"<size=80%><color=#7FC8FF>Arrosée à {Mathf.RoundToInt(supply * 100f)} % ({WaterModel.ZoneName[zone]})</color> · racines {roots:0.0} m</size>\n"
+                        : $"<size=80%><color=#FFA040>Non arrosée</color> · racines {roots:0.0} m</size>\n";
+                }
                 text += r != null && r.issue != null
                     ? $"<color=#FF6060><b>! {r.issue}</b></color>"
                     : "<color=#80FF80><b>Besoins satisfaits</b></color>";

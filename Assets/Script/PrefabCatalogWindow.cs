@@ -67,6 +67,10 @@ namespace GardenXR
         }
 
         const int AllTab = -1;
+        const int PathTab = -2;
+        const int IrrigationTab = -3;
+        PathTool _pathTool;
+        IrrigationNetworkBuilder _irrigation;
 
         readonly List<Group> _groups = new List<Group>();
         readonly List<GameObject> _spawnedButtons = new List<GameObject>();
@@ -202,6 +206,16 @@ namespace GardenXR
 
             for (int i = 0; i < _groups.Count; i++)
                 CreateTab(TabLabel(_groups[i].name, _groups[i].items.Count), i);
+
+            // Onglet « Allées » si un PathTool est présent dans la scène
+            _pathTool = FindFirstObjectByType<PathTool>();
+            if (_pathTool && _pathTool.Styles.Count > 0)
+                CreateTab(TabLabel("Allées", _pathTool.Styles.Count), PathTab);
+
+            // Onglet « Irrigation » si un IrrigationNetworkBuilder est présent
+            _irrigation = FindFirstObjectByType<IrrigationNetworkBuilder>();
+            if (_irrigation && _irrigation.Styles.Count > 0)
+                CreateTab(TabLabel("Irrigation", _irrigation.Styles.Count), IrrigationTab);
         }
 
         string TabLabel(string name, int count) => showCountInTab ? $"{name} ({count})" : name;
@@ -340,8 +354,89 @@ namespace GardenXR
 
             if (_currentGroup == AllTab)
                 foreach (var g in _groups) AddButtons(g.items);
+            else if (_currentGroup == PathTab)
+                AddPathButtons();
+            else if (_currentGroup == IrrigationTab)
+                AddIrrigationButtons();
             else if (_currentGroup >= 0 && _currentGroup < _groups.Count)
                 AddButtons(_groups[_currentGroup].items);
+        }
+
+        /// <summary>Un bouton par type de tuyau : pastille de couleur + nom.</summary>
+        void AddIrrigationButtons()
+        {
+            if (_irrigation == null) return;
+            foreach (var style in _irrigation.Styles)
+            {
+                var captured = style;
+                AddToolButton(style.name, style.color, () => _irrigation.Begin(captured));
+            }
+        }
+
+        void AddToolButton(string name, Color color, System.Action onClick)
+        {
+            var button = Instantiate(itemButtonTemplate, contentRoot);
+            button.gameObject.SetActive(true);
+            button.name = "Btn_Outil_" + name;
+
+            var label = button.transform.Find("Label")?.GetComponent<TMP_Text>();
+            if (label)
+            {
+                label.text = name;
+                label.gameObject.SetActive(true);
+            }
+
+            var icon = button.transform.Find("Icon")?.GetComponent<Image>();
+            if (icon)
+            {
+                icon.sprite = null;
+                icon.color = color;
+                icon.enabled = true;
+            }
+
+            button.onClick.AddListener(() =>
+            {
+                GardenSounds.Play(GardenSound.Click, transform.position);
+                onClick();
+                if (closeOnSelect) SetOpen(false);
+            });
+            _spawnedButtons.Add(button.gameObject);
+        }
+
+        /// <summary>Un bouton par style d'allée : pastille de couleur + nom.</summary>
+        void AddPathButtons()
+        {
+            if (_pathTool == null) return;
+            foreach (var style in _pathTool.Styles)
+            {
+                var button = Instantiate(itemButtonTemplate, contentRoot);
+                button.gameObject.SetActive(true);
+                button.name = "Btn_Allee_" + style.name;
+
+                var label = button.transform.Find("Label")?.GetComponent<TMP_Text>();
+                if (label)
+                {
+                    label.text = style.name;
+                    label.gameObject.SetActive(true); // toujours le nom pour les allées
+                }
+
+                var icon = button.transform.Find("Icon")?.GetComponent<Image>();
+                if (icon)
+                {
+                    icon.sprite = null;
+                    icon.color = style.color;
+                    icon.enabled = true;
+                }
+
+                var captured = style;
+                button.onClick.AddListener(() =>
+                {
+                    GardenSounds.Play(GardenSound.Click, transform.position);
+                    _pathTool.Begin(captured);
+                    if (closeOnSelect) SetOpen(false);
+                });
+                _spawnedButtons.Add(button.gameObject);
+            }
         }
 
         void AddButtons(List<GardenItemData> items)
@@ -387,6 +482,8 @@ namespace GardenXR
         void OnItemClicked(GardenItemData item)
         {
             GardenSounds.Play(GardenSound.Click, transform.position);
+            if (_pathTool) _pathTool.Stop(); // on quitte les outils de tracé si on choisit un objet
+            if (_irrigation) _irrigation.Stop();
             if (placer != null) placer.BeginPlacement(item);
             else Debug.LogWarning("[Catalog] Aucun PrefabPlacer assigné.");
 

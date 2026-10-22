@@ -45,6 +45,23 @@ namespace GardenXR
             return Mathf.Abs(local.x) <= size.x * 0.5f && Mathf.Abs(local.z) <= size.y * 0.5f;
         }
 
+        /// <summary>Point le plus proche sur le bord de la zone (utilisé pour le snap des tuyaux d'irrigation).</summary>
+        public Vector3 ClosestPointOnBorder(Vector3 worldPos)
+        {
+            var rot = Quaternion.Euler(0f, transform.eulerAngles.y, 0f);
+            Vector3 l = Quaternion.Inverse(rot) * (worldPos - transform.position);
+            float hx = size.x * 0.5f, hz = size.y * 0.5f;
+            float cx = Mathf.Clamp(l.x, -hx, hx), cz = Mathf.Clamp(l.z, -hz, hz);
+
+            if (Mathf.Abs(l.x) <= hx && Mathf.Abs(l.z) <= hz)
+            {
+                // À l'intérieur : on pousse vers le bord le plus proche
+                if (hx - Mathf.Abs(l.x) < hz - Mathf.Abs(l.z)) cx = (l.x >= 0f ? 1f : -1f) * hx;
+                else cz = (l.z >= 0f ? 1f : -1f) * hz;
+            }
+            return transform.position + rot * new Vector3(cx, l.y, cz);
+        }
+
         public bool Allows(GardenItemData item)
         {
             if (allowedGroups == null || allowedGroups.Count == 0) return true;
@@ -57,6 +74,9 @@ namespace GardenXR
         /// <summary>Vrai si cet élément peut être posé à cette position, compte tenu de toutes les zones.</summary>
         public static bool IsAllowed(GardenItemData item, Vector3 worldPos)
         {
+            // Pas de plante sur une allée (la décoration reste autorisée)
+            if (item != null && item.IsPlant && GardenPath.IsOnPath(worldPos)) return false;
+
             bool insideAny = false;
             foreach (var z in All)
             {
