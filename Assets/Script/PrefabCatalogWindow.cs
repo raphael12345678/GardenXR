@@ -69,6 +69,10 @@ namespace GardenXR
         const int AllTab = -1;
         const int PathTab = -2;
         const int IrrigationTab = -3;
+        const int ZoneTab = -4;
+        const int TabRows = 2;
+        const float TabBarHeight = 108f; // 2 lignes d'onglets
+        ZoneTool _zoneTool;
         PathTool _pathTool;
         IrrigationNetworkBuilder _irrigation;
 
@@ -216,6 +220,30 @@ namespace GardenXR
             _irrigation = FindFirstObjectByType<IrrigationNetworkBuilder>();
             if (_irrigation && _irrigation.Styles.Count > 0)
                 CreateTab(TabLabel("Irrigation", _irrigation.Styles.Count), IrrigationTab);
+
+            // Onglet « Zones » si un ZoneTool est présent
+            _zoneTool = FindFirstObjectByType<ZoneTool>();
+            if (_zoneTool && _zoneTool.Styles.Count > 0)
+                CreateTab(TabLabel("Zones", _zoneTool.Styles.Count), ZoneTab);
+
+            LayoutTabGrid();
+        }
+
+        /// <summary>Barre créée par code : onglets répartis sur 2 lignes, largeur égale.</summary>
+        void LayoutTabGrid()
+        {
+            var grid = tabContainer ? tabContainer.GetComponent<GridLayoutGroup>() : null;
+            if (grid == null || _tabs.Count == 0) return;
+
+            int rows = _tabs.Count > 4 ? TabRows : 1;
+            int cols = Mathf.CeilToInt(_tabs.Count / (float)rows);
+            float width = ((RectTransform)tabContainer).rect.width;
+            if (width <= 1f) width = ((RectTransform)transform).rect.width - 24f;
+
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = cols;
+            grid.cellSize = new Vector2((width - grid.spacing.x * (cols - 1)) / cols,
+                                        (TabBarHeight - grid.spacing.y * (rows - 1)) / rows);
         }
 
         string TabLabel(string name, int count) => showCountInTab ? $"{name} ({count})" : name;
@@ -254,7 +282,7 @@ namespace GardenXR
         /// </summary>
         Transform CreateTabBar()
         {
-            const float barHeight = 64f, margin = 12f;
+            const float barHeight = TabBarHeight, margin = 12f;
             var parent = _scroll ? _scroll.transform.parent : transform;
 
             var bar = new GameObject("Tabs", typeof(RectTransform));
@@ -267,10 +295,10 @@ namespace GardenXR
             rt.offsetMin = new Vector2(margin, -(barHeight + margin));
             rt.offsetMax = new Vector2(-margin, -margin);
 
-            var layout = bar.AddComponent<HorizontalLayoutGroup>();
-            layout.spacing = 10f;
-            layout.childControlWidth = layout.childControlHeight = true;
-            layout.childForceExpandWidth = layout.childForceExpandHeight = true;
+            var layout = bar.AddComponent<GridLayoutGroup>();
+            layout.spacing = new Vector2(8f, 8f);
+            layout.startAxis = GridLayoutGroup.Axis.Horizontal;
+            layout.childAlignment = TextAnchor.MiddleCenter;
 
             // La liste commence sous les onglets
             if (_scroll)
@@ -302,7 +330,11 @@ namespace GardenXR
             trt.offsetMin = trt.offsetMax = Vector2.zero;
             var t = txtGo.AddComponent<TextMeshProUGUI>();
             t.text = label;
-            t.fontSize = 26;
+            t.fontSize = 24;
+            t.enableAutoSizing = true;   // les noms longs rétrécissent au lieu de déborder
+            t.fontSizeMin = 14;
+            t.fontSizeMax = 24;
+            t.enableWordWrapping = false;
             t.fontStyle = FontStyles.Bold;
             t.alignment = TextAlignmentOptions.Center;
             t.color = new Color(0.1f, 0.15f, 0.1f);
@@ -358,6 +390,13 @@ namespace GardenXR
                 AddPathButtons();
             else if (_currentGroup == IrrigationTab)
                 AddIrrigationButtons();
+            else if (_currentGroup == ZoneTab && _zoneTool)
+                foreach (var style in _zoneTool.Styles)
+                {
+                    var captured = style;
+                    AddToolButton(style.name, style.color, () => _zoneTool.Begin(captured),
+                                  style.lawn ? PathTextures.Grass() : null);
+                }
             else if (_currentGroup >= 0 && _currentGroup < _groups.Count)
                 AddButtons(_groups[_currentGroup].items);
         }
@@ -373,25 +412,69 @@ namespace GardenXR
             }
         }
 
-        void AddToolButton(string name, Color color, System.Action onClick)
+        readonly Dictionary<Texture2D, Sprite> _toolSprites = new Dictionary<Texture2D, Sprite>();
+
+        /// <summary>
+        /// Bouton d'outil (zones, allées, irrigation) : aperçu de la texture (ou pastille de couleur)
+        /// et nom toujours lisible : texte blanc gras, contour noir, sur un bandeau sombre au premier plan.
+        /// </summary>
+        void AddToolButton(string name, Color color, System.Action onClick, Texture2D preview = null)
         {
             var button = Instantiate(itemButtonTemplate, contentRoot);
             button.gameObject.SetActive(true);
             button.name = "Btn_Outil_" + name;
+
+            var icon = button.transform.Find("Icon")?.GetComponent<Image>();
+            if (icon)
+            {
+                if (preview)
+                {
+                    if (!_toolSprites.TryGetValue(preview, out var sp))
+                    {
+                        // Un morceau de la texture, à l'échelle d'une vignette
+                        int w = Mathf.Min(preview.width, 256);
+                        sp = Sprite.Create(preview, new Rect(0, 0, w, w), new Vector2(0.5f, 0.5f));
+                        _toolSprites[preview] = sp;
+                    }
+                    icon.sprite = sp;
+                    icon.color = Color.white;
+                }
+                else
+                {
+                    icon.sprite = null;
+                    icon.color = color;
+                }
+                icon.preserveAspect = false;
+                icon.enabled = true;
+            }
 
             var label = button.transform.Find("Label")?.GetComponent<TMP_Text>();
             if (label)
             {
                 label.text = name;
                 label.gameObject.SetActive(true);
-            }
+                label.color = Color.white;
+                label.fontStyle = FontStyles.Bold;
+                label.enableWordWrapping = true;
+                label.alignment = TextAlignmentOptions.Center;
+                label.outlineWidth = 0.25f;
+                label.outlineColor = new Color32(0, 0, 0, 255);
 
-            var icon = button.transform.Find("Icon")?.GetComponent<Image>();
-            if (icon)
-            {
-                icon.sprite = null;
-                icon.color = color;
-                icon.enabled = true;
+                // Bandeau sombre derrière le texte
+                var lrt = (RectTransform)label.transform;
+                var bg = new GameObject("LabelBackground", typeof(RectTransform));
+                bg.layer = label.gameObject.layer;
+                var brt = (RectTransform)bg.transform;
+                brt.SetParent(lrt.parent, false);
+                brt.anchorMin = lrt.anchorMin; brt.anchorMax = lrt.anchorMax;
+                brt.pivot = lrt.pivot;
+                brt.anchoredPosition = lrt.anchoredPosition;
+                brt.sizeDelta = lrt.sizeDelta;
+                var bgImg = bg.AddComponent<Image>();
+                bgImg.color = new Color(0f, 0f, 0f, 0.55f);
+                bgImg.raycastTarget = false;
+                brt.SetAsLastSibling();
+                lrt.SetAsLastSibling(); // le texte passe devant l'aperçu
             }
 
             button.onClick.AddListener(() =>
@@ -409,33 +492,9 @@ namespace GardenXR
             if (_pathTool == null) return;
             foreach (var style in _pathTool.Styles)
             {
-                var button = Instantiate(itemButtonTemplate, contentRoot);
-                button.gameObject.SetActive(true);
-                button.name = "Btn_Allee_" + style.name;
-
-                var label = button.transform.Find("Label")?.GetComponent<TMP_Text>();
-                if (label)
-                {
-                    label.text = style.name;
-                    label.gameObject.SetActive(true); // toujours le nom pour les allées
-                }
-
-                var icon = button.transform.Find("Icon")?.GetComponent<Image>();
-                if (icon)
-                {
-                    icon.sprite = null;
-                    icon.color = style.color;
-                    icon.enabled = true;
-                }
-
                 var captured = style;
-                button.onClick.AddListener(() =>
-                {
-                    GardenSounds.Play(GardenSound.Click, transform.position);
-                    _pathTool.Begin(captured);
-                    if (closeOnSelect) SetOpen(false);
-                });
-                _spawnedButtons.Add(button.gameObject);
+                AddToolButton(style.name, style.color, () => _pathTool.Begin(captured),
+                              PathTextures.Get(PathTextures.Resolve(style)));
             }
         }
 
@@ -484,6 +543,7 @@ namespace GardenXR
             GardenSounds.Play(GardenSound.Click, transform.position);
             if (_pathTool) _pathTool.Stop(); // on quitte les outils de tracé si on choisit un objet
             if (_irrigation) _irrigation.Stop();
+            if (_zoneTool) _zoneTool.Stop();
             if (placer != null) placer.BeginPlacement(item);
             else Debug.LogWarning("[Catalog] Aucun PrefabPlacer assigné.");
 

@@ -7,11 +7,15 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Haptics;
 
 namespace GardenXR
 {
+    public enum PathPattern { Auto, Gravier, Dallage, TerreBattue, Uni }
+
     /// <summary>Un type d'allée proposé dans l'onglet « Allées » du catalogue.</summary>
     [Serializable]
     public class PathStyle
     {
         public string name = "Gravier";
+        [Tooltip("Texture générée. Auto = déduite du nom (gravier / dallage / terre).")]
+        public PathPattern pattern = PathPattern.Auto;
         public Color color = new Color(0.78f, 0.74f, 0.66f);
         [Tooltip("Optionnel : matériau texturé (gravier, dalles...). Sinon couleur unie.")]
         public Material material;
@@ -116,6 +120,7 @@ namespace GardenXR
             var placer = FindFirstObjectByType<PrefabPlacer>();
             if (placer) placer.CancelPlacement();
             if (IrrigationNetworkBuilder.Instance) IrrigationNetworkBuilder.Instance.Stop();
+            if (ZoneTool.Instance) ZoneTool.Instance.Stop();
 
             Stop();
             _style = style;
@@ -207,14 +212,16 @@ namespace GardenXR
                 return;
             }
 
-            var pts = smooth ? Chaikin(_pts, 2) : new List<Vector3>(_pts);
+            var pts = smooth ? CleanPath(_pts, _style.width) : new List<Vector3>(_pts);
 
             var go = new GameObject($"Allee_{_style.name}_{++_count}");
             if (pathsRoot) go.transform.SetParent(pathsRoot, false);
             // Chaque nouvelle allée est posée un poil plus haut que la précédente :
             // là où deux allées se croisent, la plus récente passe dessus (pas de scintillement).
             float lift = 0.015f + 0.002f * (_count % 20);
-            go.AddComponent<MeshFilter>().sharedMesh = BuildRibbon(pts, _style.width, lift);
+            var mesh = new Mesh { name = "Allee" };
+            FillPathMesh(mesh, pts, _style.width, lift);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = _material;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -253,16 +260,203 @@ namespace GardenXR
                 mr.sharedMaterial = CreateMaterial(_style, 0.6f, transparent: true);
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
-            FillRibbon(_previewMesh, _pts, _style.width, 0.06f); // aperçu au-dessus de tout
+            // L'aperçu montre déjà le tracé nettoyé (lignes droites + virages arrondis)
+            var pts = smooth ? CleanPath(_pts, _style.width) : _pts;
+            FillPathMesh(_previewMesh, pts, _style.width, 0.06f); // au-dessus de tout
         }
 
         // ---------- Géométrie ----------
 
-        static Mesh BuildRibbon(List<Vector3> pts, float width, float lift)
+        /// <summary>
+        /// Nettoie le tracé à main levée :
+        /// 1. ré-échantillonnage régulier ;
+        /// 2. simplification (Ramer-Douglas-Peucker) : le tremblement de la main disparaît,
+        ///    les portions presque droites deviennent des lignes droites ;
+        /// 3. chaque angle est remplacé par un arc de cercle (rayon ≥ 0,75 × largeur) :
+        ///    virages réguliers, sans pli du ruban côté intérieur ;
+        /// 4. ré-échantillonnage fin pour des courbes lisses.
+        /// </summary>
+        public static List<Vector3> CleanPath(List<Vector3> raw, float width)
         {
-            var mesh = new Mesh { name = "Allee" };
-            FillRibbon(mesh, pts, width, lift);
-            return mesh;
+            if (raw.Count < 2) return new List<Vector3>(raw);
+            var pts = Resample(raw, 0.1f);
+            float tolerance = Mathf.Clamp(width * 0.18f, 0.06f, 0.25f);
+            pts = Simplify(pts, tolerance);
+            pts = Fillet(pts, Mathf.Max(width * 0.75f, 0.45f));
+            return Resample(pts, 0.08f);
+        }
+
+        static List<Vector3> Resample(List<Vector3> src, float step)
+        {
+            var o = new List<Vector3> { src[0] };
+            float carry = 0f;
+            for (int i = 1; i < src.Count; i++)
+            {
+                Vector3 a = src[i - 1], b = src[i];
+                float seg = FlatDistance(a, b);
+                if (seg < 1e-5f) continue;
+                float t = step - carry;
+                while (t <= seg)
+                {
+                    o.Add(Vector3.Lerp(a, b, t / seg));
+                    t += step;
+                }
+                carry = seg - (t - step);
+            }
+            if (FlatDistance(o[o.Count - 1], src[src.Count - 1]) > step * 0.25f) o.Add(src[src.Count - 1]);
+            else o[o.Count - 1] = src[src.Count - 1];
+            return o;
+        }
+
+        static List<Vector3> Simplify(List<Vector3> pts, float tol)
+        {
+            if (pts.Count < 3) return new List<Vector3>(pts);
+            var keep = new bool[pts.Count];
+            keep[0] = keep[pts.Count - 1] = true;
+            var stack = new Stack<(int, int)>();
+            stack.Push((0, pts.Count - 1));
+            while (stack.Count > 0)
+            {
+                var (a, b) = stack.Pop();
+                float maxD = 0f; int idx = -1;
+                for (int i = a + 1; i < b; i++)
+                {
+                    float d = DistToSegmentXZ(pts[i], pts[a], pts[b]);
+                    if (d > maxD) { maxD = d; idx = i; }
+                }
+                if (idx >= 0 && maxD > tol)
+                {
+                    keep[idx] = true;
+                    stack.Push((a, idx));
+                    stack.Push((idx, b));
+                }
+            }
+            var o = new List<Vector3>();
+            for (int i = 0; i < pts.Count; i++) if (keep[i]) o.Add(pts[i]);
+            return o;
+        }
+
+        static List<Vector3> Fillet(List<Vector3> pts, float radius)
+        {
+            if (pts.Count < 3) return new List<Vector3>(pts);
+            var o = new List<Vector3> { pts[0] };
+            for (int i = 1; i < pts.Count - 1; i++)
+            {
+                Vector3 P = pts[i];
+                Vector3 toA = Flat(pts[i - 1] - P), toB = Flat(pts[i + 1] - P);
+                float la = toA.magnitude, lb = toB.magnitude;
+                if (la < 1e-4f || lb < 1e-4f) continue;
+                Vector3 u = toA / la, v = toB / lb;
+                float theta = Vector3.Angle(u, v) * Mathf.Deg2Rad; // angle intérieur
+                if (theta > Mathf.PI * 0.97f) { o.Add(P); continue; } // presque droit
+
+                float half = theta * 0.5f;
+                float t = radius / Mathf.Tan(half);
+                float tMax = Mathf.Min(la, lb) * 0.5f;
+                if (t > tMax) t = tMax;
+                float r = t * Mathf.Tan(half);
+
+                Vector3 t1 = P + u * t, t2 = P + v * t;
+                Vector3 bis = (u + v).normalized;
+                Vector3 c = P + bis * (r / Mathf.Sin(half));
+
+                Vector3 a1 = Flat(t1 - c), a2 = Flat(t2 - c);
+                float sweep = Vector3.SignedAngle(a1, a2, Vector3.up);
+                int steps = Mathf.Max(2, Mathf.CeilToInt(Mathf.Abs(sweep) / 8f));
+                for (int k = 0; k <= steps; k++)
+                {
+                    Vector3 d = Quaternion.AngleAxis(sweep * k / steps, Vector3.up) * a1;
+                    Vector3 q = c + d;
+                    q.y = P.y;
+                    o.Add(q);
+                }
+            }
+            o.Add(pts[pts.Count - 1]);
+            return o;
+        }
+
+        static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
+
+        static float DistToSegmentXZ(Vector3 p, Vector3 a, Vector3 b)
+        {
+            var P = new Vector2(p.x, p.z); var A = new Vector2(a.x, a.z); var AB = new Vector2(b.x, b.z) - A;
+            float t = AB.sqrMagnitude > 1e-8f ? Mathf.Clamp01(Vector2.Dot(P - A, AB) / AB.sqrMagnitude) : 0f;
+            return (A + AB * t - P).magnitude;
+        }
+
+        /// <summary>
+        /// Ruban de l'allée + embouts arrondis aux deux extrémités.
+        /// UV : u de 0 à 1 sur la largeur (bordures de la texture sur les bords), v = distance / largeur.
+        /// </summary>
+        static void FillPathMesh(Mesh mesh, List<Vector3> pts, float width, float lift)
+        {
+            int n = pts.Count;
+            if (n < 2) { mesh.Clear(); return; }
+            const int capSeg = 10;
+            float half = width * 0.5f;
+
+            var verts = new List<Vector3>(n * 2 + capSeg * 2 + 4);
+            var uvs = new List<Vector2>(verts.Capacity);
+            var tris = new List<int>((n - 1) * 6 + capSeg * 6);
+            var dists = new float[n];
+            var sides = new Vector3[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 prev = pts[Mathf.Max(0, i - 1)], next = pts[Mathf.Min(n - 1, i + 1)];
+                Vector3 dir = Flat(next - prev);
+                if (dir.sqrMagnitude < 1e-8f) dir = Vector3.forward;
+                dir.Normalize();
+                sides[i] = new Vector3(-dir.z, 0f, dir.x);
+                if (i > 0) dists[i] = dists[i - 1] + FlatDistance(pts[i], pts[i - 1]);
+
+                Vector3 p = pts[i] + Vector3.up * lift;
+                verts.Add(p + sides[i] * half); uvs.Add(new Vector2(0f, dists[i] / width));
+                verts.Add(p - sides[i] * half); uvs.Add(new Vector2(1f, dists[i] / width));
+            }
+            for (int i = 0; i < n - 1; i++)
+            {
+                int a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+            }
+
+            AddCap(verts, uvs, tris, pts[0], sides[0], -1f, dists[0], half, width, lift, capSeg);
+            AddCap(verts, uvs, tris, pts[n - 1], sides[n - 1], 1f, dists[n - 1], half, width, lift, capSeg);
+
+            var normals = new Vector3[verts.Count];
+            for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+
+            mesh.Clear();
+            mesh.SetVertices(verts);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(tris, 0);
+            mesh.normals = normals;
+            mesh.RecalculateBounds();
+        }
+
+        /// <summary>Demi-disque à une extrémité. dirSign = -1 au début (vers l'arrière), +1 à la fin.</summary>
+        static void AddCap(List<Vector3> verts, List<Vector2> uvs, List<int> tris, Vector3 center, Vector3 side,
+                           float dirSign, float dist, float half, float width, float lift, int seg)
+        {
+            Vector3 fwd = new Vector3(side.z, 0f, -side.x) * -dirSign; // direction sortante
+            int ci = verts.Count;
+            verts.Add(center + Vector3.up * lift);
+            uvs.Add(new Vector2(0.5f, dist / width));
+            for (int k = 0; k <= seg; k++)
+            {
+                float a = Mathf.PI * k / seg;
+                Vector3 off = side * Mathf.Cos(a) + fwd * Mathf.Sin(a);
+                verts.Add(center + off * half + Vector3.up * lift);
+                float uSide = Vector3.Dot(off, side);   // +1 = côté u=0
+                float along = Vector3.Dot(off, fwd) * dirSign;
+                uvs.Add(new Vector2(0.5f - uSide * 0.5f, (dist + along * half) / width));
+            }
+            for (int k = 0; k < seg; k++)
+            {
+                if (dirSign > 0f) { tris.Add(ci); tris.Add(ci + 1 + k); tris.Add(ci + 2 + k); }
+                else { tris.Add(ci); tris.Add(ci + 2 + k); tris.Add(ci + 1 + k); }
+            }
         }
 
         /// <summary>
@@ -355,15 +549,26 @@ namespace GardenXR
         {
             if (style.material && !transparent) return style.material;
 
-            Color col = style.color; col.a = alpha;
+            var pattern = PathTextures.Resolve(style);
+            Texture2D tex = PathTextures.Get(pattern);
+
             if (transparent)
-                return new Material(Shader.Find("Sprites/Default")) { color = col };
+            {
+                Color pc = tex ? Color.white : style.color; pc.a = alpha;
+                return new Material(Shader.Find("Sprites/Default")) { color = pc, mainTexture = tex };
+            }
 
             var shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null) shader = Shader.Find("Sprites/Default");
+            Color col = tex ? Color.white : style.color;
             var m = new Material(shader) { color = col };
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", col);
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.1f);
+            if (tex)
+            {
+                m.mainTexture = tex;
+                if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
+            }
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", pattern == PathPattern.Dallage ? 0.28f : 0.08f);
             if (m.HasProperty("_Cull")) m.SetFloat("_Cull", 0f); // visible des deux côtés
             return m;
         }

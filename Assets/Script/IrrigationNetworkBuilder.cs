@@ -267,6 +267,7 @@ namespace GardenXR
             var placer = FindFirstObjectByType<PrefabPlacer>();
             if (placer) placer.CancelPlacement();
             if (PathTool.Instance) PathTool.Instance.Stop();
+            if (ZoneTool.Instance) ZoneTool.Instance.Stop();
 
             Stop();
             _style = style;

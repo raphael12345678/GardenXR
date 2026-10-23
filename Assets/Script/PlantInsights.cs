@@ -322,6 +322,7 @@ namespace GardenXR
             _panelText.color = Color.white;
             _panelText.alignment = TextAlignmentOptions.TopLeft;
             _panelText.raycastTarget = false;
+            MakeAlwaysOnTop(_panel);
 
             _panel.enabled = false;
         }
@@ -381,23 +382,53 @@ namespace GardenXR
         /// Au-dessus de l'objet, comme d'habitude. Si l'objet est plus haut que les yeux (arbre),
         /// le panneau descend à hauteur du regard et se place devant l'objet, côté utilisateur.
         /// </summary>
+        /// <summary>
+        /// Place le panneau entre toi et l'objet, quelle que soit sa taille (petite plante, gros buisson, arbre) :
+        /// - devant l'objet, de ton côté (jamais caché derrière le feuillage) ;
+        /// - à hauteur lisible : juste au-dessus des objets bas, à hauteur de poitrine pour les objets hauts ;
+        /// - jamais plus près de toi que 'minPanelDistance' (ni plus loin que l'objet lui-même).
+        /// Le panneau est en plus dessiné par-dessus la géométrie, donc toujours visible.
+        /// </summary>
         Vector3 InfoPanelPosition(Bounds b)
         {
-            Vector3 above = new Vector3(b.center.x, b.max.y + 0.3f, b.center.z);
-            float eyeLevel = _head.position.y - 0.1f;
-            if (above.y <= _head.position.y + 0.2f) return above;
+            Vector3 head = _head.position;
+            Vector3 toHead = head - b.center; toHead.y = 0f;
+            float dist = toHead.magnitude;
+            toHead = dist > 0.001f ? toHead / dist : Vector3.forward;
 
-            Vector3 toHead = _head.position - b.center;
-            toHead.y = 0f;
-            float distToHead = toHead.magnitude;
-            if (distToHead < 0.001f) return new Vector3(b.center.x, eyeLevel, b.center.z);
-            toHead /= distToHead;
+            // Bord de l'objet tourné vers toi
+            float radius = Mathf.Max(b.extents.x, b.extents.z);
+            float edgeDist = Mathf.Max(0f, dist - radius);
 
-            // Collé au tronc, côté utilisateur, mais toujours à au moins 'minPanelDistance' de lui
-            float offset = Mathf.Min(0.5f, Mathf.Max(0f, distToHead - minPanelDistance));
-            Vector3 p = b.center + toHead * offset;
-            p.y = eyeLevel;
+            // On avance le panneau un peu devant ce bord, sans dépasser la distance minimale
+            float forward = Mathf.Clamp(edgeDist - minPanelDistance, 0f, 0.35f);
+            Vector3 p = b.center + toHead * (Mathf.Min(radius, dist) + forward);
+
+            // Hauteur : au-dessus de l'objet s'il est bas, sinon à hauteur de poitrine
+            float above = b.max.y + 0.25f;
+            p.y = Mathf.Clamp(above, head.y - 0.9f, head.y - 0.05f);
             return p;
+        }
+
+        /// <summary>Le panneau est dessiné par-dessus tout le reste (feuillage, troncs, autres panneaux).</summary>
+        static void MakeAlwaysOnTop(Canvas canvas)
+        {
+            canvas.sortingOrder = 1000;
+            const float always = (float)UnityEngine.Rendering.CompareFunction.Always;
+            foreach (var g in canvas.GetComponentsInChildren<Graphic>(true))
+            {
+                if (g is TMP_Text t)
+                {
+                    var m = t.fontMaterial; // instance propre à ce texte
+                    if (m && m.HasProperty("unity_GUIZTestMode")) m.SetFloat("unity_GUIZTestMode", always);
+                }
+                else
+                {
+                    var m = new Material(Shader.Find("UI/Default"));
+                    m.SetFloat("unity_GUIZTestMode", always);
+                    g.material = m;
+                }
+            }
         }
 
         static string FormatHour(float h)

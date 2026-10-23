@@ -30,11 +30,27 @@ namespace GardenXR
         [SerializeField] Color color = new Color(0.45f, 0.3f, 0.15f, 0.45f); // terre
         [SerializeField] bool showLabel = true;
         [SerializeField] float labelHeight = 0.6f;
+        [Tooltip("Pelouse : texture d'herbe détaillée, tout est autorisé dessus. " +
+                 "Une zone posée sur une pelouse garde sa propre règle.")]
+        [SerializeField] bool lawn = false;
 
         Transform _label;
         Transform _head;
 
         public string ZoneName => zoneName;
+        public Vector2 Size => size;
+        public bool IsLawn => lawn;
+
+        /// <summary>Configuration par code (outil de création de zones en VR). À appeler juste après AddComponent.</summary>
+        public void Setup(string name, List<string> groups, Vector2 zoneSize, Color zoneColor, bool isLawn = false)
+        {
+            zoneName = name;
+            allowedGroups = groups;
+            size = zoneSize;
+            color = zoneColor;
+            lawn = isLawn;
+            if (lawn) allowedGroups = new List<string>(); // tout est autorisé
+        }
         public IReadOnlyList<string> AllowedGroups => allowedGroups;
 
         // ---------- Règles ----------
@@ -77,14 +93,17 @@ namespace GardenXR
             // Pas de plante sur une allée (la décoration reste autorisée)
             if (item != null && item.IsPlant && GardenPath.IsOnPath(worldPos)) return false;
 
-            bool insideAny = false;
+            // Les zones à règle (massif, verger...) priment sur la pelouse qu'elles recouvrent
+            bool insideAny = false, onLawn = false;
             foreach (var z in All)
             {
                 if (!z.Contains(worldPos)) continue;
+                if (z.lawn) { onLawn = true; continue; }
                 insideAny = true;
                 if (z.Allows(item)) return true;
             }
-            return !insideAny && AllowOutsideZones;
+            if (insideAny) return false;
+            return onLawn || AllowOutsideZones;
         }
 
         // ---------- Cycle de vie ----------
@@ -108,6 +127,8 @@ namespace GardenXR
 
         void BuildVisual()
         {
+            if (lawn) { BuildLawnVisual(); return; }
+
             var shader = Shader.Find("Sprites/Default"); // transparent, non éclairé, compatible URP
             var mat = new Material(shader) { color = color };
 
@@ -152,6 +173,15 @@ namespace GardenXR
                 canvas.renderMode = RenderMode.WorldSpace;
                 ((RectTransform)go.transform).sizeDelta = new Vector2(400f, 100f);
 
+                // Bandeau sombre derrière le texte : lisible même au-dessus de l'herbe
+                var bg = new GameObject("Background", typeof(RectTransform)).AddComponent<UnityEngine.UI.Image>();
+                bg.transform.SetParent(go.transform, false);
+                var bgrt = (RectTransform)bg.transform;
+                bgrt.anchorMin = Vector2.zero; bgrt.anchorMax = Vector2.one;
+                bgrt.offsetMin = bgrt.offsetMax = Vector2.zero;
+                bg.color = new Color(0f, 0f, 0f, 0.5f);
+                bg.raycastTarget = false;
+
                 var t = new GameObject("Text", typeof(RectTransform)).AddComponent<TextMeshProUGUI>();
                 t.transform.SetParent(go.transform, false);
                 var rt = (RectTransform)t.transform;
@@ -169,6 +199,48 @@ namespace GardenXR
                 t.raycastTarget = false;
                 _label = go.transform;
             }
+        }
+
+        /// <summary>
+        /// Pelouse : surface opaque texturée (1 motif d'herbe par mètre), éclairée et recevant les ombres
+        /// des plantes. Posée juste au-dessus du sol, sous les zones colorées et les allées.
+        /// </summary>
+        void BuildLawnVisual()
+        {
+            var fill = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            fill.name = "Pelouse";
+            Destroy(fill.GetComponent<Collider>());
+            fill.transform.SetParent(transform, false);
+            fill.transform.localPosition = new Vector3(0f, 0.006f, 0f);
+            fill.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            fill.transform.localScale = new Vector3(size.x, size.y, 1f);
+
+            var mr = fill.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = LawnMaterial(size);
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = true;
+        }
+
+        public static Material LawnMaterial(Vector2 tiling, float alpha = 1f)
+        {
+            var tex = PathTextures.Grass();
+            Material m;
+            if (alpha < 1f)
+            {
+                m = new Material(Shader.Find("Sprites/Default")) { color = new Color(1f, 1f, 1f, alpha), mainTexture = tex };
+            }
+            else
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Sprites/Default");
+                m = new Material(shader) { color = Color.white, mainTexture = tex };
+                if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
+                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", Color.white);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.05f);
+                if (m.HasProperty("_Cull")) m.SetFloat("_Cull", 0f);
+            }
+            m.mainTextureScale = tiling;
+            if (m.HasProperty("_BaseMap")) m.SetTextureScale("_BaseMap", tiling);
+            return m;
         }
 
         // Aperçu dans la vue Scene

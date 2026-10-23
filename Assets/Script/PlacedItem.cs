@@ -15,6 +15,9 @@ namespace GardenXR
         /// <summary>Objet actuellement tenu en main (null sinon).</summary>
         public static PlacedItem Held { get; private set; }
 
+        /// <summary>Objet actuellement visé par un rayon (null sinon).</summary>
+        public static PlacedItem Hovered { get; private set; }
+
         /// <summary>Tous les objets posés et actifs (utilisé par l'analyse d'ensoleillement).</summary>
         public static readonly System.Collections.Generic.List<PlacedItem> All = new System.Collections.Generic.List<PlacedItem>();
 
@@ -90,6 +93,7 @@ namespace GardenXR
         void OnDisable()
         {
             All.Remove(this);
+            if (Hovered == this) Hovered = null;
             if (PlantInsights.Instance) PlantInsights.Instance.SetHovered(this, false);
             // Supprimé ou désactivé : on retire proprement le highlight
             _hoverCount = 0;
@@ -109,6 +113,7 @@ namespace GardenXR
         void OnHoverEnter(HoverEnterEventArgs _)
         {
             _hoverCount++;
+            Hovered = this;
             SetHighlight(true);
             if (PlantInsights.Instance) PlantInsights.Instance.SetHovered(this, true);
         }
@@ -118,6 +123,7 @@ namespace GardenXR
             _hoverCount = Mathf.Max(0, _hoverCount - 1);
             if (_hoverCount == 0)
             {
+                if (Hovered == this) Hovered = null;
                 SetHighlight(false);
                 if (PlantInsights.Instance) PlantInsights.Instance.SetHovered(this, false);
             }

@@ -26,6 +26,9 @@ namespace GardenXR
         [Tooltip("Supprimer l'objet tenu : bouton B = main droite + secondaryButton")]
         [SerializeField] Hand deleteHand = Hand.Right;
         [SerializeField] string deleteButton = "secondaryButton";
+        [Tooltip("Dupliquer : bouton A = main droite + primaryButton")]
+        [SerializeField] Hand duplicateHand = Hand.Right;
+        [SerializeField] string duplicateButton = "primaryButton";
 
         [Header("Réglages")]
         [SerializeField] int maxSteps = 30;
@@ -66,7 +69,8 @@ namespace GardenXR
         }
 
         readonly List<Step> _steps = new List<Step>();
-        bool _undoWasPressed, _deleteWasPressed;
+        bool _undoWasPressed, _deleteWasPressed, _dupWasPressed;
+        PrefabPlacer _placer;
 
         // ---------- Cycle de vie ----------
 
@@ -88,6 +92,54 @@ namespace GardenXR
             {
                 Log($"Supprimer reçu – objet tenu : {(PlacedItem.Held ? PlacedItem.Held.name : "aucun")}");
                 if (PlacedItem.Held != null) Delete(PlacedItem.Held);
+            }
+
+            if (Pressed(duplicateHand, duplicateButton, ref _dupWasPressed)) Duplicate();
+        }
+
+        // ---------- Duplication ----------
+
+        /// <summary>
+        /// A (main droite) :
+        /// - en TENANT une plante : « tampon », une copie est posée là où elle se trouve ; on garde l'original
+        ///   en main pour continuer (pratique pour une rangée ou une haie) ;
+        /// - en VISANT une plante posée : un fantôme de la même plante apparaît, prêt à être posé
+        ///   (gâchette), en série jusqu'à B.
+        /// Inactif pendant les outils zones / irrigation, qui utilisent aussi A.
+        /// </summary>
+        void Duplicate()
+        {
+            if ((ZoneTool.Instance && ZoneTool.Instance.IsActive) ||
+                (IrrigationNetworkBuilder.Instance && IrrigationNetworkBuilder.Instance.IsActive) ||
+                (PathTool.Instance && PathTool.Instance.IsActive)) return;
+
+            if (_placer == null) _placer = FindFirstObjectByType<PrefabPlacer>();
+            if (_placer == null) return;
+
+            var held = PlacedItem.Held;
+            if (held != null && held.Data != null)
+            {
+                var rot = Quaternion.Euler(0f, held.transform.eulerAngles.y, 0f);
+                var copy = _placer.SpawnItem(held.Data, held.transform.position, rot);
+                var item = copy.GetComponent<PlacedItem>();
+                if (item == null || !item.SnapToGround() || !PlantingZone.IsAllowed(held.Data, copy.transform.position))
+                {
+                    // Hors du terrain ou dans une zone interdite : on annule la copie
+                    Undo();
+                    GardenSounds.Play(GardenSound.Error, held.transform.position);
+                    return;
+                }
+                GardenSounds.Play(GardenSound.Place, copy.transform.position);
+                Log($"Copie posée : {copy.name}");
+                return;
+            }
+
+            var hovered = PlacedItem.Hovered;
+            if (hovered != null && hovered.Data != null && !_placer.IsPlacing)
+            {
+                _placer.BeginPlacement(hovered.Data, true);
+                GardenSounds.Play(GardenSound.Click, hovered.transform.position);
+                Log($"Duplication de {hovered.name} : vise le sol et appuie sur la gâchette");
             }
         }
 

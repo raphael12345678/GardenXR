@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: d3d521fc8c5413146bc4ea6126c5456f
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 625f186215c104763be7675aa2d941aa, type: 3}
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229007
+  packageName: 2022 PBR XfrogPlants Sampler
+  packageVersion: 1.0
+  assetPath: Assets/Xfrog/2022 PBR XfrogPlants Sampler/Maps/Shaders/EU01_Bark01.shadergraph
+  uploadId: 518273

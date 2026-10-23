@@ -62,9 +62,14 @@ namespace GardenXR
             rotateAction.action?.Enable();
         }
 
-        public void BeginPlacement(GardenItemData item)
+        bool _serial; // pose en série (duplication) : reste en mode placement jusqu'à B
+
+        public void BeginPlacement(GardenItemData item) => BeginPlacement(item, false);
+
+        public void BeginPlacement(GardenItemData item, bool serial)
         {
             CancelPlacement();
+            _serial = serial;
             _current = item;
             _yaw = 0f;
             _waitForRelease = true;
@@ -142,7 +147,7 @@ namespace GardenXR
             Play(placeClip, GardenSound.Place, soundPos);
             if (haptics) haptics.SendHapticImpulse(0.4f, 0.08f);
 
-            if (!keepPlacing) CancelPlacement();
+            if (!keepPlacing && !_serial) CancelPlacement();
         }
 
         /// <summary>Même signature que GardenItemSpawner.SpawnItem du document de conception.</summary>
