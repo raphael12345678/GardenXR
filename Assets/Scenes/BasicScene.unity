@@ -1090,6 +1090,62 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 579755221}
   m_CullTransparentMesh: 1
+--- !u!1 &625208066
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 625208068}
+  - component: {fileID: 625208067}
+  m_Layer: 0
+  m_Name: EfreiSplash
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &625208067
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 625208066}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3099e02e3311ee46ae627548641ace2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  logo: {fileID: 21300000, guid: a187043ff01522d41b39837fc987af9e, type: 3}
+  title: GardenXR
+  subtitle: "Concevoir son jardin en r\xE9alit\xE9 virtuelle"
+  team: "Rapha\xEBl Girard \xB7 Robinson Diallo \xB7 Yassine Hadded\nOrlane Ndjibou
+    \xB7 Femi Oussou"
+  footer: "EFREI \xB7 Projet XR 2026-2027"
+  fadeIn: 0.6
+  hold: 5
+  fadeOut: 0.6
+  distance: 1.5
+  widthMeters: 1.6
+  heightOffset: 0
+--- !u!4 &625208068
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 625208066}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &756192406
 GameObject:
   m_ObjectHideFlags: 0
@@ -1748,110 +1804,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 01f69dc1cb084aa42b2f2f8cd87bc770, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!1 &1622726818
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1622726820}
-  - component: {fileID: 1622726819}
-  m_Layer: 0
-  m_Name: Zone_Massif (1)
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1622726819
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1622726818}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: afda4dc955b7dbd4a84ddc9b7cf2bcf6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  zoneName: Arbres
-  allowedGroups:
-  - Arbres
-  size: {x: 3, y: 2}
-  color: {r: 0.45, g: 0.3, b: 0.15, a: 0.45}
-  showLabel: 1
-  labelHeight: 0.6
-  lawn: 0
---- !u!4 &1622726820
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1622726818}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2, y: 0, z: 2}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1644750197
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1644750199}
-  - component: {fileID: 1644750198}
-  m_Layer: 0
-  m_Name: Zone_Massif
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1644750198
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1644750197}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: afda4dc955b7dbd4a84ddc9b7cf2bcf6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  zoneName: Massif de plantes
-  allowedGroups:
-  - Plantes
-  size: {x: 3, y: 2}
-  color: {r: 0.45, g: 0.3, b: 0.15, a: 0.45}
-  showLabel: 1
-  labelHeight: 0.6
-  lawn: 0
---- !u!4 &1644750199
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1644750197}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1662535544
 GameObject:
   m_ObjectHideFlags: 0
@@ -2411,14 +2363,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   sun: {fileID: 2113707751}
-  localPosition: {x: 0, y: 0.05, z: -0.06}
-  localEuler: {x: 50, y: 0, z: 0}
-  widthMeters: 0.18
+  panelOffset: {x: 0, y: 0.06, z: 0.17}
+  panelEuler: {x: 90, y: 0, z: 0}
+  panelWidthMeters: 0.26
   showThreshold: 0.6
   hideThreshold: 0.4
   minHour: 5
   maxHour: 22
-  buttonStep: 1
+  glideSpeed: 4
+  playSpeed: 1
 --- !u!1 &2092139007
 GameObject:
   m_ObjectHideFlags: 0
@@ -2677,10 +2630,9 @@ SceneRoots:
   - {fileID: 361114439}
   - {fileID: 2113707752}
   - {fileID: 1662535546}
-  - {fileID: 1644750199}
-  - {fileID: 1622726820}
   - {fileID: 1701003905}
   - {fileID: 1205040027}
   - {fileID: 756192408}
   - {fileID: 100926219}
   - {fileID: 223519509}
+  - {fileID: 625208068}
